@@ -5,9 +5,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.core.config import settings
 from app.models.user import User
+from app.models.chat import ChatConversation
 
 # 초기화할 Beanie Document 모델 목록
-DOCUMENT_MODELS = [User]
+DOCUMENT_MODELS = [User, ChatConversation]
 
 
 async def init_db():

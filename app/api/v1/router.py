@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users
+from app.api.v1.endpoints import auth, users, chat
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -11,3 +11,6 @@ api_v1_router.include_router(auth.router, tags=["Auth"])
 
 # ── 유저 ──
 api_v1_router.include_router(users.router, tags=["Users"])
+
+# ── 채팅 ──
+api_v1_router.include_router(chat.router, tags=["Chat"])
