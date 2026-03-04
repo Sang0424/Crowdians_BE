@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, chat, academy
+from app.api.v1.endpoints import auth, users, chat, academy, archive
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -17,3 +17,6 @@ api_v1_router.include_router(chat.router, tags=["Chat"])
 
 # ── 아카데미 ──
 api_v1_router.include_router(academy.router, tags=["Academy"])
+
+# ── 지식 도서관 (Archive) ──
+api_v1_router.include_router(archive.router, tags=["Archive"])

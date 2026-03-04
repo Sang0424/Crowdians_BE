@@ -7,9 +7,10 @@ from app.core.config import settings
 from app.models.user import User
 from app.models.chat import ChatConversation
 from app.models.academy import KnowledgeCard, CardResponse
+from app.models.archive import ArchivePost, ArchiveAnswer
 
 # 초기화할 Beanie Document 모델 목록
-DOCUMENT_MODELS = [User, ChatConversation, KnowledgeCard, CardResponse]
+DOCUMENT_MODELS = [User, ChatConversation, KnowledgeCard, CardResponse, ArchivePost, ArchiveAnswer]
 
 
 async def init_db():

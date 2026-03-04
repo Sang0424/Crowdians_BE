@@ -21,6 +21,7 @@ from app.services.chat_service import (
     delete_chat_message,
     get_or_create_conversation,
 )
+from app.services.archive_service import create_archive_post
 
 router = APIRouter()
 
@@ -175,7 +176,13 @@ async def request_sos(
     current_user.stats.gold -= 30
     await current_user.save()
     
-    # TODO: 지식 의뢰 데이터를 DB(ArchivePost 또는 KnowledgeCard)에 저장하는 로직 추가
+    # 지식 의뢰 데이터를 ArchivePost에 저장 (카테고리: sos)
+    await create_archive_post(
+        user=current_user,
+        question=request.question,
+        category="sos",
+        bounty=30
+    )
     
     return ChatSosResponse(
         success=True,
