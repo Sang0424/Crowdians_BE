@@ -11,10 +11,8 @@ from pydantic import BaseModel, Field
 class UserStatsResponse(BaseModel):
     level: int
     exp: int
-    maxExp: int
     gold: int
     stamina: int
-    maxStamina: int
     trust: int
     intelligence: int
     courage: int
@@ -22,10 +20,17 @@ class UserStatsResponse(BaseModel):
     dailyChatExp: int
 
 
+class EquippedPartsResponse(BaseModel):
+    head: str
+    hand: str
+    body: str
+    effect: str
+
+
 class CharacterResponse(BaseModel):
-    id: str
-    name: str
-    image: Optional[str] = None
+    type: str
+    equippedParts: EquippedPartsResponse
+    unlockedParts: list[str]
 
 
 class UserResponse(BaseModel):
@@ -53,6 +58,7 @@ class LoginResponse(BaseModel):
     isNewUser: bool
     user: UserResponse
     accessToken: str
+    refreshToken: str
 
 
 # ── Nickname ──
@@ -69,3 +75,13 @@ class NicknameRequest(BaseModel):
 class NicknameResponse(BaseModel):
     success: bool
     nickname: str
+
+
+# ── Token Refresh ──
+
+class RefreshRequest(BaseModel):
+    refreshToken: str = Field(..., description="리프레시 토큰")
+
+
+class RefreshResponse(BaseModel):
+    accessToken: str

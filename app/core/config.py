@@ -5,17 +5,21 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # ── MongoDB ──
-    MONGODB_URL: str = "mongodb://localhost:27017"
-    DB_NAME: str = "crowdians_db"
+    MONGODB_URL: str
+    DB_NAME: str
 
     # ── JWT ──
-    SECRET_KEY: str = "your-secret-key-here"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24시간
+    JWT_SECRET: str
+    JWT_ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+    REFRESH_TOKEN_EXPIRE_DAYS: int
 
     # ── Firebase ──
-    # 환경변수 GOOGLE_APPLICATION_CREDENTIALS 로 서비스 계정 키 경로를 지정
-    # 예: export GOOGLE_APPLICATION_CREDENTIALS="/path/to/firebase-service-account.json"
+    GOOGLE_APPLICATION_CREDENTIALS: str
+    GEMINI_API_KEY: str
+
+    # ── Redis ──
+    REDIS_URL: str
 
     # ── CORS ──
     CORS_ORIGINS: list[str] = [
@@ -24,7 +28,7 @@ class Settings(BaseSettings):
     ]
 
     class Config:
-        env_file = ".env"
+        env_file = ".env.local"
 
 
 settings = Settings()

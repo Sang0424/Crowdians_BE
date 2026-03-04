@@ -51,4 +51,6 @@ dependencies:
       - typing-extensions==4.15.0
       - typing-inspection==0.4.2
       - uvicorn==0.40.0
+      - google-genai
+      - redis[asyncio]==5.2.1
 prefix: /opt/anaconda3/envs/Crowdians

@@ -9,14 +9,21 @@ from app.schemas.auth import (
     LoginResponse,
     NicknameRequest,
     NicknameResponse,
+    RefreshRequest,
+    RefreshResponse,
     UserResponse,
     UserStatsResponse,
     CharacterResponse,
+    EquippedPartsResponse,
 )
 from app.services.auth_service import (
     verify_firebase_token,
     get_or_create_user,
     generate_access_token,
+    generate_refresh_token,
+    save_refresh_token,
+    verify_refresh_token,
+    revoke_refresh_token,
 )
 
 router = APIRouter()
@@ -33,10 +40,8 @@ def _user_to_response(user: User) -> UserResponse:
         stats=UserStatsResponse(
             level=user.stats.level,
             exp=user.stats.exp,
-            maxExp=user.stats.max_exp,
             gold=user.stats.gold,
             stamina=user.stats.stamina,
-            maxStamina=user.stats.max_stamina,
             trust=user.stats.trust,
             intelligence=user.stats.intelligence,
             courage=user.stats.courage,
@@ -44,9 +49,14 @@ def _user_to_response(user: User) -> UserResponse:
             dailyChatExp=user.stats.daily_chat_exp,
         ),
         character=CharacterResponse(
-            id=user.character.id,
-            name=user.character.name,
-            image=user.character.image,
+            type=user.character.type,
+            equippedParts=EquippedPartsResponse(
+                head=user.character.equipped_parts.head,
+                hand=user.character.equipped_parts.hand,
+                body=user.character.equipped_parts.body,
+                effect=user.character.equipped_parts.effect,
+            ),
+            unlockedParts=user.character.unlocked_parts,
         ),
         createdAt=user.created_at,
         lastLoginAt=user.last_login_at,
@@ -88,14 +98,58 @@ async def login(request: LoginRequest):
         provider=request.provider,
     )
 
-    # 3. JWT 액세스 토큰 생성
+    # 3. 토큰 생성 및 Redis 저장
     access_token = generate_access_token(uid)
+    refresh_token = generate_refresh_token(uid)
+    await save_refresh_token(uid, refresh_token)
 
     return LoginResponse(
         isNewUser=is_new_user,
         user=_user_to_response(user),
         accessToken=access_token,
+        refreshToken=refresh_token,
     )
+
+
+# ══════════════════════════════════════
+# POST /auth/refresh — AccessToken 재발급
+# ══════════════════════════════════════
+
+@router.post(
+    "/auth/refresh",
+    response_model=RefreshResponse,
+    summary="토큰 갱신",
+    description="RefreshToken으로 새로운 AccessToken을 발급합니다.",
+)
+async def refresh_token(request: RefreshRequest):
+    try:
+        uid = await verify_refresh_token(request.refreshToken)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+
+    new_access_token = generate_access_token(uid)
+
+    return RefreshResponse(accessToken=new_access_token)
+
+
+# ══════════════════════════════════════
+# POST /auth/logout — 로그아웃
+# ══════════════════════════════════════
+
+@router.post(
+    "/auth/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="로그아웃",
+    description="RefreshToken을 무효화합니다. 이후 해당 토큰으로 재발급이 불가합니다.",
+)
+async def logout(
+    request: RefreshRequest,
+    current_user: User = Depends(get_current_user),
+):
+    await revoke_refresh_token(request.refreshToken)
 
 
 # ══════════════════════════════════════

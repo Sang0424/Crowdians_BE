@@ -11,22 +11,38 @@ class UserStats(BaseModel):
     """유저 스탯 (임베디드 모델)"""
     level: int = 1
     exp: int = 0
-    max_exp: int = 100
     gold: int = 0                 # Gold (G)
     stamina: int = 20
-    max_stamina: int = 20
     trust: int = 1000             # 신뢰도 (기본 1000)
     intelligence: int = 0         # 지능
     courage: int = 0              # 용기
     intimacy: int = 0             # 친밀도
     daily_chat_exp: int = 0       # 오늘 채팅 EXP (일일 상한 50)
 
+    @property
+    def max_exp(self) -> int:
+        """레벨업에 필요한 경험치: 50 * level^1.5"""
+        return int(50 * (self.level ** 1.5))
+
+    @property
+    def max_stamina(self) -> int:
+        """최대 스태미너 (고정값)"""
+        return 20
+
+
+class EquippedParts(BaseModel):
+    """장착된 파츠 정보"""
+    head: str = ""
+    hand: str = ""
+    body: str = ""
+    effect: str = ""
+
 
 class CharacterInfo(BaseModel):
     """캐릭터 정보 (임베디드 모델)"""
-    id: str = "char_default"
-    name: str = "알"
-    image: Optional[str] = None
+    type: str = "pico"
+    equipped_parts: EquippedParts = Field(default_factory=EquippedParts)
+    unlocked_parts: list[str] = Field(default_factory=list)
 
 
 class User(Document):

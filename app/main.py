@@ -7,14 +7,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
+from app.core.redis import init_redis, close_redis
 from app.db import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """앱 시작 시 DB 초기화, 종료 시 정리"""
+    """앱 시작 시 DB/Redis 초기화, 종료 시 정리"""
     await init_db()
+    await init_redis()
     yield
+    await close_redis()
 
 
 app = FastAPI(
