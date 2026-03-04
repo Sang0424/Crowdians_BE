@@ -108,8 +108,8 @@ async def verify_refresh_token(refresh_token: str) -> str:
     try:
         payload = jwt.decode(
             refresh_token,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM],
+            settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM],
         )
         if payload.get("type") != "refresh":
             raise ValueError("리프레시 토큰이 아닙니다.")

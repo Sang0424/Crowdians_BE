@@ -12,10 +12,8 @@ from app.schemas.auth import (
     RefreshRequest,
     RefreshResponse,
     UserResponse,
-    UserStatsResponse,
-    CharacterResponse,
-    EquippedPartsResponse,
 )
+from app.api.v1.utils import user_to_response
 from app.services.auth_service import (
     verify_firebase_token,
     get_or_create_user,
@@ -29,38 +27,6 @@ from app.services.auth_service import (
 router = APIRouter()
 
 
-# ── Helper: User Document → Response ──
-
-def _user_to_response(user: User) -> UserResponse:
-    """DB User 모델을 프론트엔드 호환 Response로 변환"""
-    return UserResponse(
-        uid=user.uid,
-        email=user.email,
-        nickname=user.nickname,
-        stats=UserStatsResponse(
-            level=user.stats.level,
-            exp=user.stats.exp,
-            gold=user.stats.gold,
-            stamina=user.stats.stamina,
-            trust=user.stats.trust,
-            intelligence=user.stats.intelligence,
-            courage=user.stats.courage,
-            intimacy=user.stats.intimacy,
-            dailyChatExp=user.stats.daily_chat_exp,
-        ),
-        character=CharacterResponse(
-            type=user.character.type,
-            equippedParts=EquippedPartsResponse(
-                head=user.character.equipped_parts.head,
-                hand=user.character.equipped_parts.hand,
-                body=user.character.equipped_parts.body,
-                effect=user.character.equipped_parts.effect,
-            ),
-            unlockedParts=user.character.unlocked_parts,
-        ),
-        createdAt=user.created_at,
-        lastLoginAt=user.last_login_at,
-    )
 
 
 # ══════════════════════════════════════
@@ -105,7 +71,7 @@ async def login(request: LoginRequest):
 
     return LoginResponse(
         isNewUser=is_new_user,
-        user=_user_to_response(user),
+        user=user_to_response(user),
         accessToken=access_token,
         refreshToken=refresh_token,
     )
@@ -199,4 +165,4 @@ async def update_nickname(
 async def get_me(
     current_user: User = Depends(get_current_user),
 ):
-    return _user_to_response(current_user)
+    return user_to_response(current_user)
