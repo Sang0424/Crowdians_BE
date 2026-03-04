@@ -1,0 +1,41 @@
+# app/models/academy.py
+
+from datetime import datetime, timezone
+
+from beanie import Document
+from pydantic import BaseModel, Field
+
+
+class KnowledgeCard(Document):
+    """지식 카드 (Academy 문제)"""
+    type: str = "vote"              # "vote" (A/B 선택), "teach" (주관식 또는 상식), "quiz"
+    question: str
+    choices: list[str] = Field(default_factory=list)
+    correct_answer: str | int = ""  # 정답 (번호일 수도 있고 텍스트일 수도 있음)
+    bounty: int = 10                # 보상 Gold 양
+    trust_count: int = 0            # 투표 수/신뢰도 (10 이상 시 골든 데이터셋 편입 등)
+    
+    # RLHF나 특정 출처가 있다면 기록
+    source_message_id: str | None = None
+    
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "knowledge_cards"
+
+
+class CardResponse(Document):
+    """유저가 카드에 응답한 기록"""
+    user_id: str                    # User.uid
+    card_id: str                    # KnowledgeCard.id (문자열 변환)
+    answer: str | int               # 유저가 선택하거나 작성한 답
+    is_correct: bool = False
+    is_rejected: bool = False     # "둘 다 별로"를 선택한 경우 True
+    reward_exp: int = 0
+    reward_gold: int = 0
+    reward_trust: int = 0
+    
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "card_responses"
