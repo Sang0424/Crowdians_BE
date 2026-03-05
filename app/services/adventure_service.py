@@ -67,10 +67,10 @@ async def start_adventure(user: User) -> AdventureSession:
     # 여기서는 그냥 새로 덮어쓰기 위해 새 문서를 만듭니다.
     
     # 스태미나 또는 골드 소모 기획이 있다면 여기서 차감
-    if user.stats.stamina < 5:
-        raise ValueError("모험을 시작하기 위한 스태미나가 부족합니다. (5 필요)")
+    if user.stats.stamina < 1:
+        raise ValueError("모험을 시작하기 위한 스태미나가 부족합니다. (1 필요)")
         
-    user.stats.stamina -= 5
+    user.stats.stamina -= 1
     await user.save()
     
     # 1층 노드 생성

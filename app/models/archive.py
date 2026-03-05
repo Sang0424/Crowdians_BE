@@ -19,7 +19,9 @@ class ArchiveAnswer(BaseModel):
 
 class ArchivePost(Document):
     """지식 도서관 질문 글"""
-    question: str
+    title: str
+    content: str
+    is_sos: bool = False
     category: str = "general"
     bounty: int = 0
     author_id: str                              # 글 작성자 User uid

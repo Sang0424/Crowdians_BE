@@ -23,6 +23,7 @@ class ChatSendResponse(BaseModel):
     expGained: int = 0
     staminaConsumed: int = 0
     intimacyGained: int = 0
+    requiresLogin: bool = False
 
 
 # ── 채팅 내역 ──

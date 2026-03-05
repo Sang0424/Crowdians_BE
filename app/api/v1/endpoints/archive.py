@@ -39,15 +39,30 @@ async def get_archives(
     current_user: User = Depends(get_current_user),
 ):
     posts = await get_archive_list(sort)
+    
+    author_ids = list(set([p.author_id for p in posts]))
+    from beanie.operators import In
+    users = await User.find(In(User.uid, author_ids)).to_list()
+    user_dict = {u.uid: u for u in users}
+
     responses = []
     for p in posts:
+        u = user_dict.get(p.author_id)
+        author_resp = {
+            "id": p.author_id,
+            "nickname": u.nickname if u else "크라우디언",
+            "trustCount": u.stats.trust if u else 0,
+            "level": u.stats.level if u else 1,
+        }
         responses.append(
             ArchivePostResponse(
                 id=str(p.id),
-                question=p.question,
+                title=p.title,
+                content=p.content,
+                isSos=p.is_sos,
                 category=p.category,
                 bounty=p.bounty,
-                authorId=p.author_id,
+                author=author_resp,
                 answerCount=p.answer_count,
                 createdAt=p.created_at,
             )
@@ -102,7 +117,8 @@ async def create_post(
             
         post_id = await create_archive_post(
             current_user,
-            question=request.question,
+            title=request.title,
+            content=request.content,
             category=request.category,
             bounty=request.bounty
         )

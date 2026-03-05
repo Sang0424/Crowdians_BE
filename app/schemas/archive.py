@@ -6,10 +6,17 @@ from pydantic import BaseModel, Field
 
 # ── 답변 스키마 ──
 
+class AuthorResponse(BaseModel):
+    id: str
+    nickname: str
+    trustCount: int
+    level: int
+
+
 class ArchiveAnswerResponse(BaseModel):
     id: str                 # answer document _id
     postId: str
-    authorId: str
+    author: AuthorResponse
     content: str
     trustCount: int
     isTrustedByMe: bool = False  # 유저 본인이 이미 투표했는지 여부
@@ -30,10 +37,12 @@ class ArchiveAnswerSubmitResponse(BaseModel):
 
 class ArchivePostResponse(BaseModel):
     id: str                 # post document _id
-    question: str
+    title: str
+    content: str
+    isSos: bool
     category: str
     bounty: int
-    authorId: str
+    author: AuthorResponse
     answerCount: int
     createdAt: datetime
 
@@ -45,7 +54,8 @@ class ArchivePostDetailResponse(ArchivePostResponse):
 
 class ArchivePostRequest(BaseModel):
     """(선택) 직접 질문을 작성하는 경우"""
-    question: str = Field(..., description="질문 내용")
+    title: str = Field(..., description="질문 제목")
+    content: str = Field(..., description="질문 내용")
     category: str = Field(default="general")
     bounty: int = Field(default=0, description="걸고 싶은 골드 바운티")
 

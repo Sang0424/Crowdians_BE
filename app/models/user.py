@@ -24,8 +24,8 @@ class UserStats(BaseModel):
 
     @property
     def max_exp(self) -> int:
-        """레벨업에 필요한 경험치: 50 * level^1.5"""
-        return int(50 * (self.level ** 1.5))
+        """레벨업에 필요한 경험치: 50 * level^1.6"""
+        return int(50 * (self.level ** 1.6))
 
     @property
     def max_stamina(self) -> int:

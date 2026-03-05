@@ -128,3 +128,52 @@ async def delete_chat_message(uid: str, index: int) -> None:
     conv.messages.pop(index)
     conv.updated_at = datetime.now(timezone.utc)
     await conv.save()
+
+import json
+
+async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos: bool = False) -> tuple[str, str]:
+    """
+    최근 채팅 문맥과 제공된 텍스트를 바탕으로 아카이브(지식도서관)에 등록할
+    질문의 제목(title)과 내용(content)을 AI를 통해 생성합니다.
+    """
+    conv = await get_or_create_conversation(uid)
+    
+    # 최근 메시지 10개 정도만 가져와서 문맥으로 제공
+    recent_messages = conv.messages[-10:] if len(conv.messages) > 10 else conv.messages
+    context_str = "\n".join([f"{m.role}: {m.content}" for m in recent_messages])
+    
+    prompt = f"""
+    아래는 사용자와의 최근 채팅 내역입니다:
+    {context_str}
+    
+    추가 요청 내용:
+    {text_context}
+    
+    위 문맥을 바탕으로 지식 커뮤니티(아카이브)에 등록할 질문 형식의 '제목'과 '내용'을 작성해주세요.
+    {'특히 이것은 SOS (긴급 구조) 요청이므로, 질문 내용이 명확하고 눈에 띄게 작성되어야 합니다.' if is_sos else '이것은 AI 답변에 대한 불만족(RLHF)으로 접수된 내용이므로, 어떤 부분이 해결되지 않았는지 명확한 질문 형태로 작성해주세요.'}
+    
+    출력은 반드시 다음 JSON 형식으로만 해주세요:
+    {{"title": "질문 제목", "content": "질문 상세 내용"}}
+    """
+    
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+        )
+        # JSON 파싱 (마크다운 백틱 등 제거 처리)
+        response_text = response.text.strip()
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]
+        if response_text.startswith("```"):
+            response_text = response_text[3:]
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]
+            
+        data = json.loads(response_text.strip())
+        return data.get("title", "생성된 질문 제목"), data.get("content", "생성된 질문 내용")
+    except Exception as e:
+        print(f"Failed to generate summary: {e}")
+        # 오류 시 기본값 반환
+        return "AI 요약 생성 실패", text_context if text_context else "내용을 요약할 수 없습니다."
+

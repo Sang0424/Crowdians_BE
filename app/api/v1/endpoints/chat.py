@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_user_optional
 from app.models.chat import ChatConversation
 from app.models.user import User
 from app.schemas.chat import (
@@ -20,6 +20,8 @@ from app.services.chat_service import (
     clear_chat_history,
     delete_chat_message,
     get_or_create_conversation,
+    generate_summary_for_archive,
+    send_guest_chat_message,
 )
 from app.services.archive_service import create_archive_post
 
@@ -38,9 +40,13 @@ router = APIRouter()
 )
 async def send_message(
     request: ChatMessageRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     try:
+        if current_user is None:
+            result = await send_guest_chat_message(request.content)
+            return ChatSendResponse(**result)
+            
         result = await send_chat_message(current_user, request.content)
         return ChatSendResponse(**result)
     except ValueError as e:
@@ -66,11 +72,14 @@ async def send_message(
     description="현재 활성화된 대화 세션의 메시지 목록을 가져옵니다.",
 )
 async def get_chat_history(
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
     conversationId: str | None = Query(None, description="대화 세션 ID (생략 시 최신 세션)"),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=100),
 ):
+    if current_user is None:
+        return ChatHistoryResponse(conversationId="guest", messages=[])
+        
     # 여기서는 간단히 최신 세션 전체 메시지를 반환합니다.
     conv = await get_or_create_conversation(current_user.uid)
     
@@ -145,7 +154,20 @@ async def unlike_message(
     request: ChatUnlikeRequest,
     current_user: User = Depends(get_current_user),
 ):
-    # TODO: Academy 로직 융합 시 KnowledgeCard 등록 처리
+    title, content = await generate_summary_for_archive(
+        uid=current_user.uid,
+        text_context=f"불만족 답변(인덱스 {request.messageIndex}) 내역을 바탕으로 더 나은 답변을 위한 질문 작성",
+        is_sos=False
+    )
+    
+    await create_archive_post(
+        user=current_user,
+        title=title,
+        content=content,
+        category="qna",
+        bounty=0,
+        is_sos=False
+    )
     
     return ChatUnlikeResponse(
         success=True,
@@ -176,12 +198,20 @@ async def request_sos(
     current_user.stats.gold -= 30
     await current_user.save()
     
+    title, content = await generate_summary_for_archive(
+        uid=current_user.uid,
+        text_context=request.question,
+        is_sos=True
+    )
+    
     # 지식 의뢰 데이터를 ArchivePost에 저장 (카테고리: sos)
     await create_archive_post(
         user=current_user,
-        question=request.question,
+        title=title,
+        content=content,
         category="sos",
-        bounty=30
+        bounty=30,
+        is_sos=True
     )
     
     return ChatSosResponse(

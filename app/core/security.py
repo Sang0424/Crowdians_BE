@@ -77,3 +77,30 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+
+
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
+) -> User | None:
+    """
+    FastAPI Dependency — Authorization 헤더가 있으면 검증 후 유저 반환,
+    없거나 유효하지 않으면 None 반환.
+    """
+    if not credentials:
+        return None
+        
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+        uid: str | None = payload.get("sub")
+        if uid is None:
+            return None
+    except JWTError:
+        return None
+
+    user = await User.find_one(User.uid == uid)
+    return user

@@ -8,10 +8,12 @@ from app.models.archive import ArchivePost, ArchiveAnswer
 from app.models.academy import KnowledgeCard
 
 
-async def create_archive_post(user: User, question: str, category: str = "general", bounty: int = 0) -> str:
+async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", bounty: int = 0) -> str:
     """새로운 지식 도서관 질문을 등록합니다."""
     post = ArchivePost(
-        question=question,
+        title=title,
+        content=content,
+        is_sos=is_sos,
         category=category,
         bounty=bounty,
         author_id=user.uid,
@@ -56,25 +58,47 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
         ArchiveAnswer.post_id == post_id
     ).sort([("trust_count", -1)]).to_list()
     
+    from beanie.operators import In
+    author_ids = list(set([ans.author_id for ans in answers] + [post.author_id]))
+    users = await User.find(In(User.uid, author_ids)).to_list()
+    user_dict = {u.uid: u for u in users}
+    
     # 프론트에 맞게 매핑
     answer_responses = []
     for ans in answers:
+        u = user_dict.get(ans.author_id)
+        author_resp = {
+            "id": ans.author_id,
+            "nickname": u.nickname if u else "크라우디언",
+            "trustCount": u.stats.trust if u else 0,
+            "level": u.stats.level if u else 1,
+        }
         answer_responses.append({
             "id": str(ans.id),
             "postId": ans.post_id,
-            "authorId": ans.author_id,
+            "author": author_resp,
             "content": ans.content,
             "trustCount": ans.trust_count,
             "isTrustedByMe": user_uid in ans.voted_user_ids,
             "createdAt": ans.created_at,
         })
         
+    post_u = user_dict.get(post.author_id)
+    post_author_resp = {
+        "id": post.author_id,
+        "nickname": post_u.nickname if post_u else "크라우디언",
+        "trustCount": post_u.stats.trust if post_u else 0,
+        "level": post_u.stats.level if post_u else 1,
+    }
+
     return {
         "id": str(post.id),
-        "question": post.question,
+        "title": post.title,
+        "content": post.content,
+        "isSos": post.is_sos,
         "category": post.category,
         "bounty": post.bounty,
-        "authorId": post.author_id,
+        "author": post_author_resp,
         "answerCount": post.answer_count,
         "createdAt": post.created_at,
         "answers": answer_responses,
@@ -165,7 +189,7 @@ async def _promote_to_knowledge_card(answer: ArchiveAnswer):
         
     card = KnowledgeCard(
         type="teach",     # 주관식 또는 정답 있는 케이스
-        question=post.question,
+        question=post.title,
         correct_answer=answer.content,
         bounty=10,
         trust_count=answer.trust_count,

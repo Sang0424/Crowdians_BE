@@ -28,7 +28,7 @@ router = APIRouter()
     "/adventures/start",
     response_model=AdventureSessionResponse,
     summary="새로운 모험 시작",
-    description="스태미나 5를 지불하고 1층부터 시작하는 새로운 탐험 세션을 생성합니다.",
+    description="스태미나 1을 지불하고 1층부터 시작하는 새로운 탐험 세션을 생성합니다.",
 )
 async def start_new_adventure(
     current_user: User = Depends(get_current_user),
