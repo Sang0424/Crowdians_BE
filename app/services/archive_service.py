@@ -8,17 +8,18 @@ from app.models.archive import ArchivePost, ArchiveAnswer
 from app.models.academy import KnowledgeCard
 
 
+from app.db.repository.archive_repository import archive_repo, archive_answer_repo
+
 async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", bounty: int = 0) -> str:
     """새로운 지식 도서관 질문을 등록합니다."""
-    post = ArchivePost(
-        title=title,
-        content=content,
-        is_sos=is_sos,
-        category=category,
-        bounty=bounty,
-        author_id=user.uid,
-    )
-    await post.insert()
+    post = await archive_repo.create(obj_in={
+        "title": title,
+        "content": content,
+        "is_sos": is_sos,
+        "category": category,
+        "bounty": bounty,
+        "author_id": user.uid,
+    })
     return str(post.id)
 
 
@@ -27,20 +28,15 @@ async def get_archive_list(sort: str) -> list[ArchivePost]:
     # sort param (latest | popular | bounty | needed)
     sort_query = []
     if sort == "popular":
-        # 인기순 (구현상 답변이 많은 순)
         sort_query = [("answer_count", -1), ("created_at", -1)]
     elif sort == "bounty":
-        # 현상금 순
         sort_query = [("bounty", -1), ("created_at", -1)]
     elif sort == "needed":
-        # 답변이 적은 순 (답변 대기)
         sort_query = [("answer_count", 1), ("created_at", -1)]
     else:
-        # 기본 최신순
         sort_query = [("created_at", -1)]
         
-    posts = await ArchivePost.find().sort(*sort_query).to_list()
-    return posts
+    return await archive_repo.get_multi(sort=sort_query)
 
 
 async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
@@ -53,14 +49,14 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
     if not post:
         raise ValueError("질문 글을 찾을 수 없습니다.")
         
-    # 답변 조회 (가장 신뢰를 많이 받은 순)
-    answers = await ArchiveAnswer.find(
-        ArchiveAnswer.post_id == post_id
+    answers = await archive_answer_repo.model.find(
+        archive_answer_repo.model.post_id == post_id
     ).sort([("trust_count", -1)]).to_list()
     
+    from app.db.repository.user_repository import user_repo
     from beanie.operators import In
     author_ids = list(set([ans.author_id for ans in answers] + [post.author_id]))
-    users = await User.find(In(User.uid, author_ids)).to_list()
+    users = await user_repo.model.find(In(user_repo.model.uid, author_ids)).to_list()
     user_dict = {u.uid: u for u in users}
     
     # 프론트에 맞게 매핑
@@ -108,26 +104,23 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
 async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
     """질문에 답변을 작성합니다."""
     try:
-        post = await ArchivePost.get(ObjectId(post_id))
+        post = await archive_repo.get_by_id(post_id)
     except Exception:
         raise ValueError("유효하지 않은 Post ID입니다.")
         
     if not post:
         raise ValueError("질문 글을 찾을 수 없습니다.")
         
-    # 동일 유저가 여러 답변을 달아도 되지만, 중복 체크 등 방어로직 추가 가능.
-        
-    answer = ArchiveAnswer(
-        post_id=post_id,
-        author_id=user.uid,
-        content=content,
-    )
-    await answer.insert()
+    answer = await archive_answer_repo.create(obj_in={
+        "post_id": post_id,
+        "author_id": user.uid,
+        "content": content,
+    })
     
     # 캐싱용 answer_count 증가
     post.answer_count += 1
     post.updated_at = datetime.now(timezone.utc)
-    await post.save()
+    await archive_repo.update(db_obj=post, obj_in={"answer_count": post.answer_count, "updated_at": post.updated_at})
     
     return str(answer.id)
 
@@ -135,7 +128,7 @@ async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
 async def toggle_trust_vote(user: User, answer_id: str) -> dict:
     """답변에 신뢰함(투표)을 토글합니다."""
     try:
-        answer = await ArchiveAnswer.get(ObjectId(answer_id))
+        answer = await archive_answer_repo.get(ObjectId(answer_id))
     except Exception:
         raise ValueError("유효하지 않은 Answer ID입니다.")
         
@@ -157,7 +150,7 @@ async def toggle_trust_vote(user: User, answer_id: str) -> dict:
         answer.trust_count += 1
         is_trusted = True
         
-    await answer.save()
+    await archive_answer_repo.update(db_obj=answer, obj_in={"voted_user_ids": answer.voted_user_ids, "trust_count": answer.trust_count})
     
     # 신뢰도 보상 및 특별 로직 (trust_count == 10 달성 최초 1회 등)
     if is_trusted and answer.trust_count == 10:
@@ -166,10 +159,10 @@ async def toggle_trust_vote(user: User, answer_id: str) -> dict:
         await _promote_to_knowledge_card(answer)
         
         # 글 작성자에게 스탯 보상 (예시)
-        author = await User.find_one(User.uid == answer.author_id)
+        author = await user_repo.get_by_uid(answer.author_id)
         if author:
             author.stats.trust += 5
-            await author.save()
+            await user_repo.update(db_obj=author, obj_in={"stats": author.stats})
 
     return {
         "isTrusted": is_trusted,
@@ -180,7 +173,7 @@ async def toggle_trust_vote(user: User, answer_id: str) -> dict:
 async def _promote_to_knowledge_card(answer: ArchiveAnswer):
     """신뢰도 10 달성 시 Golden Dataset용 지식카드로 만드는 내부 로직."""
     try:
-        post = await ArchivePost.get(ObjectId(answer.post_id))
+        post = await archive_repo.get_by_id(answer.post_id)
     except Exception:
         return
         

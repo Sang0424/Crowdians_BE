@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 
-from app.core.security import get_current_user, get_current_user_optional
+from app.core.security import CurrentUser, get_current_user_optional, CurrentUser, CurrentUserOptional
 from app.models.chat import ChatConversation
 from app.models.user import User
 from app.schemas.chat import (
@@ -24,6 +24,7 @@ from app.services.chat_service import (
     send_guest_chat_message,
 )
 from app.services.archive_service import create_archive_post
+from app.core.exceptions import InsufficientResourceError
 
 router = APIRouter()
 
@@ -40,7 +41,7 @@ router = APIRouter()
 )
 async def send_message(
     request: ChatMessageRequest,
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: CurrentUserOptional,
 ):
     try:
         if current_user is None:
@@ -90,7 +91,7 @@ async def send_guest_message(
     description="현재 활성화된 대화 세션의 메시지 목록을 가져옵니다.",
 )
 async def get_chat_history(
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: CurrentUserOptional,
     conversationId: str | None = Query(None, description="대화 세션 ID (생략 시 최신 세션)"),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=100),
@@ -131,7 +132,7 @@ async def get_chat_history(
     description="유저의 전체 대화 내역을 지우고 새로 시작합니다.",
 )
 async def delete_history(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     await clear_chat_history(current_user.uid)
 
@@ -146,8 +147,8 @@ async def delete_history(
     summary="단일 채팅 메시지 삭제",
 )
 async def delete_single_message(
+    current_user: CurrentUser,
     index: int = Query(..., description="삭제할 메시지의 배열 내 위치"),
-    current_user: User = Depends(get_current_user),
 ):
     try:
         await delete_chat_message(current_user.uid, index)
@@ -170,8 +171,9 @@ async def delete_single_message(
 )
 async def unlike_message(
     request: ChatUnlikeRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
+    # Todo: Move to chat service completely? Currently fine as it composes two service calls.
     title, content = await generate_summary_for_archive(
         uid=current_user.uid,
         text_context=f"불만족 답변(인덱스 {request.messageIndex}) 내역을 바탕으로 더 나은 답변을 위한 질문 작성",
@@ -205,16 +207,14 @@ async def unlike_message(
 )
 async def request_sos(
     request: ChatSosRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     if current_user.stats.gold < 30:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="골드가 부족합니다. (30G 필요)",
-        )
+        raise InsufficientResourceError("골드")
     
+    from app.db.repository.user_repository import user_repo
     current_user.stats.gold -= 30
-    await current_user.save()
+    await user_repo.update(db_obj=current_user, obj_in={"stats": current_user.stats})
     
     title, content = await generate_summary_for_archive(
         uid=current_user.uid,

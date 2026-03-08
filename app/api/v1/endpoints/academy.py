@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 
-from app.core.security import get_current_user
+from app.core.security import CurrentUser
 from app.models.user import User
 from app.schemas.academy import (
     KnowledgeCardResponse,
@@ -32,8 +32,8 @@ router = APIRouter()
     description="하루 최대 5장의 지식 카드(Vote/Teach 믹스)를 조회합니다.",
 )
 async def get_cards(
+    current_user: CurrentUser,
     ticketIndex: int = Query(default=1, ge=1, description="몇 번째 티켓(카드)을 요청하는지 인덱스"),
-    current_user: User = Depends(get_current_user),
 ):
     # 실제 프로덕션에서는 ticketIndex나 유저의 오늘 진행도에 따라 카드를 계산합니다.
     cards = await get_daily_cards(current_user, ticketIndex)
@@ -53,7 +53,7 @@ async def get_cards(
 async def submit_card(
     card_id: str,
     request: CardSubmitRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         result = await submit_card_answer(current_user, card_id, request.answer)
@@ -77,7 +77,7 @@ async def submit_card(
 )
 async def reject_card(
     card_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         result = await reject_card_answer(current_user, card_id)
@@ -100,7 +100,7 @@ async def reject_card(
     description="티켓을 다 소진한 후 광고를 보고 추가로 충전합니다. (하루 최대 5번)",
 )
 async def recharge_academy_ticket(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         result = await recharge_ticket(current_user)

@@ -14,16 +14,13 @@ from app.models.user import User
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 MODEL_NAME = "gemini-2.5-flash"
 
+from app.db.repository.chat_repository import chat_repo
+
 async def get_or_create_conversation(uid: str) -> ChatConversation:
     """유저의 최근 활성화된 채팅 세션을 가져오거나 새로 생성합니다."""
-    # 간단히 가장 최근 세션을 하나만 사용한다고 가정
-    conv = await ChatConversation.find_one(
-        ChatConversation.uid == uid,
-        sort=[("updated_at", -1)]
-    )
+    conv = await chat_repo.get_latest_conversation(uid)
     if not conv:
-        conv = ChatConversation(uid=uid)
-        await conv.insert()
+        conv = await chat_repo.create(obj_in={"user_uid": uid})
     return conv
 
 async def send_chat_message(
@@ -85,7 +82,7 @@ async def send_chat_message(
     
     conv.messages.extend([user_msg, ai_msg])
     conv.updated_at = now
-    await conv.save()
+    await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updated_at": conv.updated_at})
     
     # 4. 유저 스탯 갱신
     user.stats.stamina -= 1
@@ -127,7 +124,7 @@ async def delete_chat_message(uid: str, index: int) -> None:
     
     conv.messages.pop(index)
     conv.updated_at = datetime.now(timezone.utc)
-    await conv.save()
+    await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updated_at": conv.updated_at})
 
 import json
 

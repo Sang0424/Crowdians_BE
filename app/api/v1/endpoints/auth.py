@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.security import get_current_user
+from app.core.security import CurrentUser
 from app.models.user import User
 from app.schemas.auth import (
     LoginRequest,
@@ -113,7 +113,7 @@ async def refresh_token(request: RefreshRequest):
 )
 async def logout(
     request: RefreshRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     await revoke_refresh_token(request.refreshToken)
 
@@ -130,7 +130,7 @@ async def logout(
 )
 async def update_nickname(
     request: NicknameRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     # 닉네임 중복 검사
     existing = await User.find_one(
@@ -163,6 +163,6 @@ async def update_nickname(
     description="현재 로그인한 유저의 전체 정보를 반환합니다.",
 )
 async def get_me(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     return user_to_response(current_user)

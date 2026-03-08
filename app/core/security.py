@@ -104,3 +104,7 @@ async def get_current_user_optional(
 
     user = await User.find_one(User.uid == uid)
     return user
+
+from typing import Annotated
+CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentUserOptional = Annotated[User | None, Depends(get_current_user_optional)]

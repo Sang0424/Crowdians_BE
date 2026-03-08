@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.security import get_current_user
+from app.core.security import CurrentUser, CurrentUser
 from app.models.user import User
 from app.schemas.user import (
     UserProfileResponse,
@@ -17,6 +17,7 @@ from app.services.user_service import (
     get_user_by_uid,
     delete_user,
     get_user_activities,
+    sync_guest_stats as sync_guest_stats_service
 )
 
 router = APIRouter()
@@ -67,10 +68,8 @@ def _user_to_profile(user: User) -> UserProfileResponse:
 async def get_user_profile(uid: str):
     user = await get_user_by_uid(uid)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="유저를 찾을 수 없습니다.",
-        )
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("User")
     return _user_to_profile(user)
 
 
@@ -96,10 +95,8 @@ async def get_user_activities_endpoint(
 ):
     user = await get_user_by_uid(uid)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="유저를 찾을 수 없습니다.",
-        )
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("User")
 
     result = await get_user_activities(uid=uid, tab=tab, page=page, limit=limit)
     return UserActivitiesResponse(**result)
@@ -116,7 +113,7 @@ async def get_user_activities_endpoint(
     description="현재 로그인한 유저의 계정을 삭제합니다. (복구 불가)",
 )
 async def delete_account(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     await delete_user(current_user)
     return DeleteAccountResponse(
@@ -136,22 +133,16 @@ async def delete_account(
 )
 async def sync_guest_stats(
     request: GuestStatsSyncRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
-    stats = current_user.stats
-    stats.exp += request.exp_gained
-    stats.intimacy += request.intimacy_gained
-    stats.stamina = max(0, stats.stamina - request.stamina_consumed)
+    updated_user = await sync_guest_stats_service(
+        current_user,
+        request.exp_gained,
+        request.stamina_consumed,
+        request.intimacy_gained
+    )
     
-    # 레벨업 처리 
-    max_exp = int(50 * (stats.level ** 1.6))
-    while stats.exp >= max_exp:
-        stats.exp -= max_exp
-        stats.level += 1
-        stats.stamina = stats.max_stamina
-        max_exp = int(50 * (stats.level ** 1.6))
-        
-    await current_user.save()
+    stats = updated_user.stats
     
     return UserStatsResponse(
         level=stats.level,

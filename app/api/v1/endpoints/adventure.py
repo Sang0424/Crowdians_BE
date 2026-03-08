@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 
-from app.core.security import get_current_user
+from app.core.security import CurrentUser
 from app.models.user import User
 from app.schemas.adventure import (
     AdventureSessionResponse,
@@ -31,7 +31,7 @@ router = APIRouter()
     description="스태미나 1을 지불하고 1층부터 시작하는 새로운 탐험 세션을 생성합니다.",
 )
 async def start_new_adventure(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         session = await start_adventure(current_user)
@@ -75,7 +75,7 @@ async def start_new_adventure(
 async def select_choice(
     session_id: str,
     request: AdventureSelectRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         result_dict = await select_adventure_node(current_user, session_id, request.choiceId)
@@ -98,7 +98,7 @@ async def select_choice(
 )
 async def goto_next_depth(
     session_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         result_dict = await continue_adventure(current_user, session_id)

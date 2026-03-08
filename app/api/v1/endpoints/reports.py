@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.security import get_current_user
+from app.core.security import CurrentUser
 from app.models.user import User
 from app.schemas.report import ReportCreateRequest, ReportResponse
 from app.services.report_service import create_report
@@ -18,7 +18,7 @@ router = APIRouter()
 )
 async def submit_report(
     request: ReportCreateRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         r = await create_report(current_user.uid, request)

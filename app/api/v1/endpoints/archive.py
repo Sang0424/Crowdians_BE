@@ -1,8 +1,8 @@
 # app/api/v1/endpoints/archive.py
 
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Query, HTTPException, status
 
-from app.core.security import get_current_user
+from app.core.security import CurrentUser
 from app.models.user import User
 from app.schemas.archive import (
     ArchivePostResponse,
@@ -20,6 +20,7 @@ from app.services.archive_service import (
     submit_archive_answer,
     toggle_trust_vote,
 )
+from app.core.exceptions import InsufficientResourceError, NotFoundError
 
 router = APIRouter()
 
@@ -35,8 +36,8 @@ router = APIRouter()
     description="최신(latest), 인기(popular), 바운티(bounty), 답변대기(needed) 순 정렬 지원.",
 )
 async def get_archives(
+    current_user: CurrentUser,
     sort: str = Query("latest", regex="^(latest|popular|bounty|needed)$"),
-    current_user: User = Depends(get_current_user),
 ):
     posts = await get_archive_list(sort)
     
@@ -81,13 +82,13 @@ async def get_archives(
 )
 async def get_archive_detail(
     post_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         detail_dict = await get_archive_post_detail(post_id, current_user.uid)
         return ArchivePostDetailResponse(**detail_dict)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise NotFoundError("게시글")
 
 
 # ══════════════════════════════════════
@@ -102,18 +103,16 @@ async def get_archive_detail(
 )
 async def create_post(
     request: ArchivePostRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     if request.bounty > 0 and current_user.stats.gold < request.bounty:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="소지한 골드가 바운티 금액보다 적습니다."
-        )
+        raise InsufficientResourceError("골드")
         
     try:
         if request.bounty > 0:
             current_user.stats.gold -= request.bounty
-            await current_user.save()
+            from app.db.repository.user_repository import user_repo
+            await user_repo.update(db_obj=current_user, obj_in={"stats": current_user.stats})
             
         post_id = await create_archive_post(
             current_user,
@@ -145,7 +144,7 @@ async def create_post(
 async def create_answer(
     post_id: str,
     request: ArchiveAnswerRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         ans_id = await submit_archive_answer(current_user, post_id, request.content)
@@ -155,10 +154,7 @@ async def create_answer(
             message="답변이 등록되었습니다."
         )
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
+        raise NotFoundError("게시글")
 
 
 # ══════════════════════════════════════
@@ -173,7 +169,7 @@ async def create_answer(
 )
 async def vote_trust(
     answer_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         result = await toggle_trust_vote(current_user, answer_id)

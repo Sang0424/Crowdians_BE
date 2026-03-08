@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 
-from app.core.security import get_current_user
+from app.core.security import CurrentUser
 from app.models.user import User
 from app.schemas.mailbox import (
     MailResponse,
@@ -22,9 +22,9 @@ router = APIRouter()
     description="자신의 우편함을 최신순으로 조회합니다. (Pagination)",
 )
 async def list_mailbox(
+    current_user: CurrentUser,
     page: int = Query(1, ge=1, description="페이지 번호"),
     limit: int = Query(20, ge=1, le=100, description="페이지 당 항목 수"),
-    current_user: User = Depends(get_current_user),
 ):
     skip = (page - 1) * limit
     mails, total = await get_user_mails(current_user.uid, skip, limit)
@@ -63,7 +63,7 @@ async def list_mailbox(
 )
 async def read_mailbox_mail(
     mail_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     try:
         result = await read_mail(current_user, mail_id)
