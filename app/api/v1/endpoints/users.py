@@ -11,6 +11,7 @@ from app.schemas.user import (
     EquippedPartsResponse,
     UserActivitiesResponse,
     DeleteAccountResponse,
+    GuestStatsSyncRequest,
 )
 from app.services.user_service import (
     get_user_by_uid,
@@ -121,4 +122,45 @@ async def delete_account(
     return DeleteAccountResponse(
         success=True,
         message="계정이 삭제되었습니다.",
+    )
+
+# ══════════════════════════════════════
+# POST /users/me/sync-guest-stats — 게스트 스탯 동기화
+# ══════════════════════════════════════
+
+@router.post(
+    "/users/me/sync-guest-stats",
+    response_model=UserStatsResponse,
+    summary="게스트 스탯 동기화",
+    description="로그인 시 게스트로서 획득한 스탯을 유저 스탯에 병합합니다.",
+)
+async def sync_guest_stats(
+    request: GuestStatsSyncRequest,
+    current_user: User = Depends(get_current_user),
+):
+    stats = current_user.stats
+    stats.exp += request.exp_gained
+    stats.intimacy += request.intimacy_gained
+    stats.stamina = max(0, stats.stamina - request.stamina_consumed)
+    
+    # 레벨업 처리 
+    max_exp = int(50 * (stats.level ** 1.6))
+    while stats.exp >= max_exp:
+        stats.exp -= max_exp
+        stats.level += 1
+        stats.stamina = stats.max_stamina
+        max_exp = int(50 * (stats.level ** 1.6))
+        
+    await current_user.save()
+    
+    return UserStatsResponse(
+        level=stats.level,
+        exp=stats.exp,
+        gold=stats.gold,
+        stamina=stats.stamina,
+        trust=stats.trust,
+        intelligence=stats.intelligence,
+        courage=stats.courage,
+        intimacy=stats.intimacy,
+        dailyChatExp=stats.daily_chat_exp,
     )

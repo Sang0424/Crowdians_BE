@@ -19,6 +19,11 @@ class UserStatsResponse(BaseModel):
     intimacy: int
     dailyChatExp: int
 
+class GuestStatsSyncRequest(BaseModel):
+    exp_gained: int
+    stamina_consumed: int
+    intimacy_gained: int
+
 
 class EquippedPartsResponse(BaseModel):
     head: str

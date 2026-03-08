@@ -60,6 +60,24 @@ async def send_message(
             detail=str(e),
         )
 
+@router.post("/chat/guest-message", response_model=ChatSendResponse, summary="게스트 채팅 메시지 전송", description="AI에게 메시지를 전송하고 스탯(Stamina, EXP 등)을 계산하여 응답합니다.")
+async def send_guest_message(
+    request: ChatMessageRequest,
+):
+    try:
+        result = await send_guest_chat_message(request.content)
+        return ChatSendResponse(**result)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
 
 # ══════════════════════════════════════
 # GET /chat/history — 채팅 내역 조회

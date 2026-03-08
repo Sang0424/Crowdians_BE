@@ -177,3 +177,35 @@ async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos:
         # 오류 시 기본값 반환
         return "AI 요약 생성 실패", text_context if text_context else "내용을 요약할 수 없습니다."
 
+async def send_guest_chat_message(
+    message_content: str,
+) -> dict:
+    """
+    게스트 메시지를 받아 Gemini API로 전달하고,
+    응답을 받아 저장하며 스탯을 갱신합니다.
+    """
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=message_content,
+        )
+        ai_message_text = response.text
+    except Exception as e:
+        ai_message_text = f"API 오류가 발생했습니다: {str(e)}"
+
+    return {
+        "userMessage": {
+            "role": "user",
+            "content": message_content,
+            "createdAt": datetime.utcnow().isoformat()
+        },
+        "aiMessage": {
+            "role": "assistant",
+            "content": ai_message_text,
+            "createdAt": datetime.utcnow().isoformat()
+        },
+        "expGained": 2,
+        "staminaConsumed": 1,
+        "intimacyGained": 1,
+        "requiresLogin": False
+    }
