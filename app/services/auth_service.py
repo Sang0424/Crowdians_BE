@@ -14,11 +14,24 @@ from jose import JWTError, jwt
 
 # ── Firebase Admin SDK 초기화 ──
 if not firebase_admin._apps:
-    cred = credentials.ApplicationDefault()
+    cred = credentials.Certificate(settings.GOOGLE_APPLICATION_CREDENTIALS)
     firebase_admin.initialize_app(cred)
 
 # Redis key prefix
 _RT_PREFIX = "refresh_token:"
+
+
+def verify_internal_api_key(api_key: str | None) -> None:
+    """
+    NextAuth 등 내부 서버에서 보낸 INTERNAL_API_KEY를 검증합니다.
+
+    Raises:
+        ValueError: 키가 없거나 일치하지 않는 경우
+    """
+    if not api_key:
+        raise ValueError("Internal API Key가 누락되었습니다.")
+    if api_key != settings.INTERNAL_API_KEY:
+        raise ValueError("유효하지 않은 Internal API Key입니다.")
 
 
 async def verify_firebase_token(id_token: str) -> dict:
@@ -61,7 +74,7 @@ async def get_or_create_user(
     new_user = User(
         uid=uid,
         email=email,
-        nickname=nickname or "크라우디언",
+        nickname="크라우디언",
         provider=provider,
         stats=UserStats(),           # 기본 스탯 (Level 1, Gold 0, Trust 1000 등)
         character=CharacterInfo(),   # 기본 캐릭터

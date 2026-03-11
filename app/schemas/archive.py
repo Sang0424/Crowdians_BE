@@ -60,6 +60,15 @@ class ArchivePostRequest(BaseModel):
     bounty: int = Field(default=0, description="걸고 싶은 골드 바운티")
 
 
+class PaginatedArchiveResponse(BaseModel):
+    """페이지네이션 래퍼"""
+    items: list[ArchivePostResponse]
+    page: int
+    size: int
+    totalCount: int
+    hasMore: bool
+
+
 class ArchivePostSubmitResponse(BaseModel):
     success: bool
     postId: str

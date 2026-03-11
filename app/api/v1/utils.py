@@ -19,13 +19,16 @@ def user_to_response(user: User) -> UserResponse:
         stats=UserStatsResponse(
             level=user.stats.level,
             exp=user.stats.exp,
+            maxExp=user.stats.max_exp,
             gold=user.stats.gold,
             stamina=user.stats.stamina,
+            maxStamina=user.stats.max_stamina,
             trust=user.stats.trust,
             intelligence=user.stats.intelligence,
             courage=user.stats.courage,
             intimacy=user.stats.intimacy,
             dailyChatExp=user.stats.daily_chat_exp,
+            isOnboardingDone=(user.nickname != "크라우디언"),
         ),
         character=CharacterResponse(
             type=user.character.type,

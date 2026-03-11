@@ -20,7 +20,7 @@ async def get_or_create_conversation(uid: str) -> ChatConversation:
     """유저의 최근 활성화된 채팅 세션을 가져오거나 새로 생성합니다."""
     conv = await chat_repo.get_latest_conversation(uid)
     if not conv:
-        conv = await chat_repo.create(obj_in={"user_uid": uid})
+        conv = await chat_repo.create(obj_in={"uid": uid})
     return conv
 
 async def send_chat_message(

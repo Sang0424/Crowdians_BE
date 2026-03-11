@@ -43,7 +43,7 @@ class EquippedParts(BaseModel):
 
 class CharacterInfo(BaseModel):
     """캐릭터 정보 (임베디드 모델)"""
-    type: str = "pico"
+    type: str = "Crowdy"
     equipped_parts: EquippedParts = Field(default_factory=EquippedParts)
     unlocked_parts: list[str] = Field(default_factory=list)
 
@@ -52,8 +52,8 @@ class User(Document):
     """유저 Document (MongoDB collection: users)"""
     uid: str                                    # Firebase UID (unique)
     email: Optional[str] = None
-    nickname: str = "크라우디언"
-    provider: str = "google"                    # google / kakao / naver
+    nickname: str 
+    provider: str                     # google / discord / twitter
 
     stats: UserStats = Field(default_factory=UserStats)
     character: CharacterInfo = Field(default_factory=CharacterInfo)

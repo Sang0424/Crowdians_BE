@@ -11,13 +11,16 @@ from pydantic import BaseModel
 class UserStatsResponse(BaseModel):
     level: int
     exp: int
+    maxExp: int
     gold: int
     stamina: int
+    maxStamina: int
     trust: int
     intelligence: int
     courage: int
     intimacy: int
     dailyChatExp: int
+    isOnboardingDone: bool
 
 class GuestStatsSyncRequest(BaseModel):
     exp_gained: int

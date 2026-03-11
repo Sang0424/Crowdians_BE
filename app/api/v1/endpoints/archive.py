@@ -12,6 +12,7 @@ from app.schemas.archive import (
     ArchiveAnswerRequest,
     ArchiveAnswerSubmitResponse,
     TrustVoteResponse,
+    PaginatedArchiveResponse,
 )
 from app.services.archive_service import (
     create_archive_post,
@@ -26,27 +27,30 @@ router = APIRouter()
 
 
 # ══════════════════════════════════════
-# GET /archive — 지식 도서관 목록 조회
+# GET /archive — 지식 도서관 목록 조회 (페이지네이션)
 # ══════════════════════════════════════
 
 @router.get(
     "/archive",
-    response_model=list[ArchivePostResponse],
-    summary="지식 도서관(Archive) 게시글 목록",
-    description="최신(latest), 인기(popular), 바운티(bounty), 답변대기(needed) 순 정렬 지원.",
+    response_model=PaginatedArchiveResponse,
+    summary="지식 도서관(Archive) 게시글 목록 (페이지네이션)",
+    description="최신(latest), 인기(popular), 바운티(bounty), 답변대기(needed) 순 정렬 지원. page/size로 페이지네이션.",
 )
 async def get_archives(
     current_user: CurrentUser,
-    sort: str = Query("latest", regex="^(latest|popular|bounty|needed)$"),
+    sort: str = Query("latest", pattern="^(latest|popular|bounty|needed)$"),
+    page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
+    size: int = Query(10, ge=1, le=50, description="페이지당 아이템 수"),
 ):
-    posts = await get_archive_list(sort)
+    skip = (page - 1) * size
+    posts, total_count = await get_archive_list(sort, skip=skip, limit=size)
     
     author_ids = list(set([p.author_id for p in posts]))
     from beanie.operators import In
     users = await User.find(In(User.uid, author_ids)).to_list()
     user_dict = {u.uid: u for u in users}
 
-    responses = []
+    items = []
     for p in posts:
         u = user_dict.get(p.author_id)
         author_resp = {
@@ -55,7 +59,7 @@ async def get_archives(
             "trustCount": u.stats.trust if u else 0,
             "level": u.stats.level if u else 1,
         }
-        responses.append(
+        items.append(
             ArchivePostResponse(
                 id=str(p.id),
                 title=p.title,
@@ -68,7 +72,16 @@ async def get_archives(
                 createdAt=p.created_at,
             )
         )
-    return responses
+
+    has_more = (skip + size) < total_count
+
+    return PaginatedArchiveResponse(
+        items=items,
+        page=page,
+        size=size,
+        totalCount=total_count,
+        hasMore=has_more,
+    )
 
 
 # ══════════════════════════════════════

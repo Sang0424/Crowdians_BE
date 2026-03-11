@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # ── Redis ──
     REDIS_URL: str
 
+    # ── Internal API (NextAuth ↔ Backend 서버 간 인증) ──
+    INTERNAL_API_KEY: str
+
     # ── CORS ──
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",

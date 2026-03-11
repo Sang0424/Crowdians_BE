@@ -1,6 +1,4 @@
-# app/api/v1/endpoints/auth.py
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.core.security import CurrentUser
 from app.models.user import User
@@ -16,6 +14,7 @@ from app.schemas.auth import (
 from app.api.v1.utils import user_to_response
 from app.services.auth_service import (
     verify_firebase_token,
+    verify_internal_api_key,
     get_or_create_user,
     generate_access_token,
     generate_refresh_token,
@@ -37,34 +36,66 @@ router = APIRouter()
     "/auth/login",
     response_model=LoginResponse,
     summary="소셜 로그인 / 자동 회원가입",
-    description="Firebase ID Token을 검증하고, 기존 유저면 로그인 / 신규 유저면 자동 회원가입을 처리합니다.",
+    description="Firebase ID Token 또는 서버 간 신뢰 기반으로 로그인을 처리합니다.",
 )
-async def login(request: LoginRequest):
-    # 1. Firebase ID Token 검증
-    try:
-        decoded = await verify_firebase_token(request.idToken)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
-        )
+async def login(
+    request: LoginRequest,
+    x_internal_api_key: str | None = Header(None),
+):
+    # ── 흐름 A: NextAuth → 백엔드 (서버 간 신뢰) ──
+    if x_internal_api_key is not None:
+        try:
+            verify_internal_api_key(x_internal_api_key)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(e),
+            )
 
-    uid = decoded.get("uid")
-    if not uid:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Firebase 토큰에서 UID를 찾을 수 없습니다.",
-        )
+        if not request.providerAccountId:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="providerAccountId가 필요합니다.",
+            )
 
-    # 2. 유저 조회 또는 생성
+        # provider:providerAccountId 조합으로 고유한 uid 생성
+        uid = f"{request.provider}:{request.providerAccountId}"
+        email = request.email
+        nickname = None
+
+    # ── 흐름 B: 모바일 등 (Firebase ID Token 검증) ──
+    else:
+        if not request.idToken:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="idToken이 필요합니다.",
+            )
+
+        try:
+            decoded = await verify_firebase_token(request.idToken)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(e),
+            )
+
+        uid = decoded.get("uid")
+        if not uid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Firebase 토큰에서 UID를 찾을 수 없습니다.",
+            )
+        email = decoded.get("email")
+        nickname = None
+
+    # ── 공통: 유저 조회/생성 → 자체 토큰 발급 ──
     user, is_new_user = await get_or_create_user(
         uid=uid,
-        email=decoded.get("email"),
-        nickname=decoded.get("name"),
+        email=email,
+        nickname=nickname,
         provider=request.provider,
     )
 
-    # 3. 토큰 생성 및 Redis 저장
     access_token = generate_access_token(uid)
     refresh_token = generate_refresh_token(uid)
     await save_refresh_token(uid, refresh_token)
@@ -132,6 +163,13 @@ async def update_nickname(
     request: NicknameRequest,
     current_user: CurrentUser,
 ):
+    # 예약된 닉네임 사용 금지
+    if request.nickname == "크라우디언":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'크라우디언'은 설정할 수 없는 닉네임입니다.",
+        )
+
     # 닉네임 중복 검사
     existing = await User.find_one(
         User.nickname == request.nickname,

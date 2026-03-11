@@ -23,8 +23,8 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
     return str(post.id)
 
 
-async def get_archive_list(sort: str) -> list[ArchivePost]:
-    """질문 목록을 조회합니다."""
+async def get_archive_list(sort: str, skip: int = 0, limit: int = 10) -> tuple[list[ArchivePost], int]:
+    """질문 목록을 페이지네이션으로 조회합니다. (posts, total_count) 반환."""
     # sort param (latest | popular | bounty | needed)
     sort_query = []
     if sort == "popular":
@@ -35,8 +35,10 @@ async def get_archive_list(sort: str) -> list[ArchivePost]:
         sort_query = [("answer_count", 1), ("created_at", -1)]
     else:
         sort_query = [("created_at", -1)]
-        
-    return await archive_repo.get_multi(sort=sort_query)
+
+    total_count = await ArchivePost.find_all().count()
+    posts = await archive_repo.get_multi(skip=skip, limit=limit, sort=sort_query)
+    return posts, total_count
 
 
 async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
