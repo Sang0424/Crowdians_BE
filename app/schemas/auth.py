@@ -78,8 +78,8 @@ class NicknameRequest(BaseModel):
     nickname: str = Field(
         ...,
         min_length=2,
-        max_length=10,
-        description="닉네임 (2~10자)",
+        max_length=12,
+        description="닉네임 (2~12자)",
     )
 
 

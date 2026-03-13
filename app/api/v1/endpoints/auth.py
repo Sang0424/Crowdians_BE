@@ -157,7 +157,7 @@ async def logout(
     "/users/me/nickname",
     response_model=NicknameResponse,
     summary="닉네임 변경",
-    description="현재 로그인한 유저의 닉네임을 변경합니다. (2~10자)",
+    description="현재 로그인한 유저의 닉네임을 변경합니다. (2~12자)",
 )
 async def update_nickname(
     request: NicknameRequest,
