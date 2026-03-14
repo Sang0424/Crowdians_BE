@@ -28,7 +28,7 @@ def user_to_response(user: User) -> UserResponse:
             courage=user.stats.courage,
             intimacy=user.stats.intimacy,
             dailyChatExp=user.stats.daily_chat_exp,
-            isOnboardingDone=(user.nickname != "크라우디언"),
+            isOnboardingDone=user.stats.is_onboarding_done,
         ),
         character=CharacterResponse(
             type=user.character.type,

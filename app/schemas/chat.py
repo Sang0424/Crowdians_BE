@@ -13,7 +13,10 @@ class ChatMessageRequest(BaseModel):
 class ChatMessageResponse(BaseModel):
     role: str = Field(..., description="user | model")
     content: str = Field(..., description="메시지 내용")
-    createdAt: datetime
+    createdAt: datetime = Field(..., alias="createdAt")
+
+    class Config:
+        populate_by_name = True
 
 
 class ChatSendResponse(BaseModel):

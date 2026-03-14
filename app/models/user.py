@@ -21,11 +21,12 @@ class UserStats(BaseModel):
     academy_tickets: int = 5      # 오늘 남은 아카데미 티켓 수
     ticket_recharges_today: int = 0 # 오늘 광고로 충전한 티켓 수 (최대 5)
     last_daily_reset: str = ""    # 마지막 일일 초기화 날짜 (YYYY-MM-DD 포맷)
+    is_onboarding_done: bool = False # 온보딩 완료 여부
 
     @property
     def max_exp(self) -> int:
         """레벨업에 필요한 경험치: 50 * level^1.6"""
-        return int(50 * (self.level ** 1.6))
+        return round(50 * (self.level ** 1.6))
 
     @property
     def max_stamina(self) -> int:

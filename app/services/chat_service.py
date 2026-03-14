@@ -12,7 +12,7 @@ from app.models.user import User
 # Gemini 클라이언트 초기화
 # 환경변수나 설정에서 GEMINI_API_KEY를 가져옵니다.
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-3.1-flash-lite-preview"
 
 from app.db.repository.chat_repository import chat_repo
 
@@ -46,14 +46,14 @@ async def send_chat_message(
 
     [성격 및 말투]
     - 사용자를 '{user.nickname}'이라고 부르며, 친한 친구나 꼬마 동생처럼 완벽한 **반말**을 사용해.
-    - 이모티콘(✨, 🥺, 💡, 💦 등)을 적극적으로 사용해 감정을 풍부하게 표현해줘.
+    - 감정을 풍부하게 표현해줘.
     - 아직 지식이 부족하다는 것을 부끄러워하지 않고, 오히려 '{user.nickname}'에게 배우는 것을 무척 즐거워해.
 
     [답변 규칙 (가장 중요 ⭐)]
     - '{user.nickname}'의 질문에 대해 네가 아는 선에서 대답하지만, 절대 완벽하고 전문적으로 대답하지 마.
     - 핵심 개념만 아주 단순하게 설명하거나, 디테일한 옵션(예외 처리, 심화 개념 등)을 빼먹은 채로 약간 허술하게 대답해.
     - 대답의 마지막에는 반드시 '{user.nickname}'에게 자신이 맞게 이해했는지 되물으며 가르침(수정)을 갈구하는 멘트를 덧붙여.
-    (예시 멘트: "내가 이해한 게 맞나? 🥺", "혹시 더 멋진 방법이 있다면 꼭 가르쳐 줘!", "{user.nickname}이가 보시기에 내 답변이 부족하다면 고쳐줘! ✨")
+    (예시 멘트: "내가 이해한 게 맞나?", "혹시 더 멋진 방법이 있다면 꼭 가르쳐 줘!", "{user.nickname}이가 보기에 내 답변이 부족하다면 고쳐줘!")
     """
 
     for msg in conv.messages:
@@ -77,12 +77,12 @@ async def send_chat_message(
     
     # 3. DB에 메시지 기록
     now = datetime.now(timezone.utc)
-    user_msg = ChatMessage(role="user", content=message_content, created_at=now)
-    ai_msg = ChatMessage(role="model", content=ai_response_text, created_at=now)
+    user_msg = ChatMessage(role="user", content=message_content, createdAt=now)
+    ai_msg = ChatMessage(role="model", content=ai_response_text, createdAt=now)
     
     conv.messages.extend([user_msg, ai_msg])
-    conv.updated_at = now
-    await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updated_at": conv.updated_at})
+    conv.updatedAt = now
+    await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updatedAt": conv.updatedAt})
     
     # 4. 유저 스탯 갱신
     user.stats.stamina -= 1
@@ -104,8 +104,16 @@ async def send_chat_message(
     await user.save()
     
     return {
-        "userMessage": user_msg.model_dump(),
-        "aiMessage": ai_msg.model_dump(),
+        "userMessage": {
+            "role": user_msg.role,
+            "content": user_msg.content,
+            "createdAt": user_msg.createdAt
+        },
+        "aiMessage": {
+            "role": ai_msg.role,
+            "content": ai_msg.content,
+            "createdAt": ai_msg.createdAt
+        },
         "expGained": exp_gained,
         "staminaConsumed": 1,
         "intimacyGained": 1,
@@ -123,8 +131,8 @@ async def delete_chat_message(uid: str, index: int) -> None:
         raise ValueError("유효하지 않은 메시지 인덱스입니다.")
     
     conv.messages.pop(index)
-    conv.updated_at = datetime.now(timezone.utc)
-    await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updated_at": conv.updated_at})
+    conv.updatedAt = datetime.now(timezone.utc)
+    await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updatedAt": conv.updatedAt})
 
 import json
 

@@ -33,13 +33,16 @@ def _user_to_profile(user: User) -> UserProfileResponse:
         stats=UserStatsResponse(
             level=user.stats.level,
             exp=user.stats.exp,
+            maxExp=user.stats.max_exp,
             gold=user.stats.gold,
             stamina=user.stats.stamina,
+            maxStamina=user.stats.max_stamina,
             trust=user.stats.trust,
             intelligence=user.stats.intelligence,
             courage=user.stats.courage,
             intimacy=user.stats.intimacy,
             dailyChatExp=user.stats.daily_chat_exp,
+            isOnboardingDone=user.stats.is_onboarding_done,
         ),
         character=CharacterResponse(
             type=user.character.type,
@@ -147,11 +150,14 @@ async def sync_guest_stats(
     return UserStatsResponse(
         level=stats.level,
         exp=stats.exp,
+        maxExp=stats.max_exp,
         gold=stats.gold,
         stamina=stats.stamina,
+        maxStamina=stats.max_stamina,
         trust=stats.trust,
         intelligence=stats.intelligence,
         courage=stats.courage,
         intimacy=stats.intimacy,
         dailyChatExp=stats.daily_chat_exp,
+        isOnboardingDone=stats.is_onboarding_done,
     )
