@@ -183,6 +183,7 @@ async def sync_guest_stats(
         dailyChatExp=stats.daily_chat_exp,
         dailyPetCount=stats.daily_pet_count,
         isOnboardingDone=stats.is_onboarding_done,
+        learningTickets = stats.learning_tickets,
     )
 
 

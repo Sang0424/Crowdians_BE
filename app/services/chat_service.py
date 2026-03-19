@@ -106,6 +106,7 @@ async def send_chat_message(
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
+                max_output_tokens=150,
                 temperature=0.7,
             )
         )
@@ -232,6 +233,11 @@ async def send_guest_chat_message(
         response = client.models.generate_content(
             model=MODEL_NAME,
             contents=message_content,
+            config=types.GenerateContentConfig(
+                system_instruction="너는 크라우디야. 사용자의 질문에 짧고 간결하게 대답해.",
+                max_output_tokens=150,
+                temperature=0.7,
+            )
         )
         ai_message_text = response.text
     except Exception as e:

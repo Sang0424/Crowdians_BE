@@ -7,7 +7,8 @@ from pydantic import BaseModel, Field
 # ── 채팅 메시지 ──
 
 class ChatMessageRequest(BaseModel):
-    content: str = Field(..., description="유저의 채팅 메시지")
+    content: str = Field(..., max_length=200, description="유저의 채팅 메시지")
+    locale: str = Field(default="ko", description="클라이언트 언어")
 
 
 class ChatMessageResponse(BaseModel):
