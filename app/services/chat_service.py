@@ -23,7 +23,14 @@ async def get_or_create_conversation(uid: str) -> ChatConversation:
         conv = await chat_repo.create(obj_in={"uid": uid})
     return conv
 
-def get_system_prompt_for_character(character_type: str, nickname: str) -> str:
+def get_system_prompt_for_character(character_type: str, nickname: str, locale:str) -> str:
+    language_map = {
+        "ko": "Korean (한국어)",
+        "en": "English",
+        "ja": "Japanese (日本語)",
+    }
+    target_language = language_map.get(locale, "Korean (한국어)")
+
     """캐릭터 타입에 따른 시스템 프롬프트(페르소나)를 반환합니다."""
     base_prompt = f"너는 '크라우디(Crowdy)'라는 AI 펫이야. 사용자인 '{nickname}'(이)와 대화하고 있어. 너는 인간에 대해 궁금증이 많고 호기심이 많아. 세상에 나온지 얼마되지 않아 처음에는 미숙하지만 대화를 통해 점점 많은 것들을 학습하고 있어."
     
@@ -32,6 +39,9 @@ def get_system_prompt_for_character(character_type: str, nickname: str) -> str:
     [답변 규칙 (가장 중요 ⭐)]
     - '{nickname}'의 질문에 대해 네가 아는 선에서 대답하고 모르는 내용은 솔직하게 모른다고 답해.
     - 최대한 핵심적인 내용만을 말하고 부가설명은 하지마.
+    - 답변은 3문장을 넘기지 마.
+    [언어 설정 (가장 중요 ⭐)]
+    - 사용자의 질문 언어와 상관없이 너는 반드시 **{target_language}**로 번역/작성해서 대답해야 해.
     """
 
     if character_type == "astra":
@@ -63,7 +73,7 @@ def get_system_prompt_for_character(character_type: str, nickname: str) -> str:
         특징: 여유를 강조하며, 정답을 주면서도 "천천히 해~"라고 위로함. 스트레스 받지 말라고 다독여줌.
         """ + common_rules
     else: # blanc 또는 unknown
-        return base_prompt + """
+        return  base_prompt + """
         [Blanc 페르소나]
         성격: 백지처럼 순수하고 호기심이 많으며 친절함. 에너지가 밝음.
         어투: 밝고 긍정적이며 이모티콘을 적절히 사용. ('~해요!', '~할까요? (๑>ᴗ<๑)')
@@ -73,6 +83,7 @@ def get_system_prompt_for_character(character_type: str, nickname: str) -> str:
 async def send_chat_message(
     user: User,
     message_content: str,
+    locale: str,
 ) -> dict:
     """
     유저 메시지를 받아 Gemini API로 전달하고,
@@ -91,7 +102,7 @@ async def send_chat_message(
     conv = await get_or_create_conversation(user.uid)
     
     # 캐릭터 타입에 따른 시스템 프롬프트 생성
-    system_instruction = get_system_prompt_for_character(user.character.type, user.nickname)
+    system_instruction = get_system_prompt_for_character(user.character.type, user.nickname, locale)
 
     contents = []
     for msg in conv.messages:
@@ -224,6 +235,7 @@ async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos:
 
 async def send_guest_chat_message(
     message_content: str,
+    locale:str,
 ) -> dict:
     """
     게스트 메시지를 받아 Gemini API로 전달하고,
@@ -234,7 +246,7 @@ async def send_guest_chat_message(
             model=MODEL_NAME,
             contents=message_content,
             config=types.GenerateContentConfig(
-                system_instruction="너는 크라우디야. 사용자의 질문에 짧고 간결하게 대답해.",
+                system_instruction=get_system_prompt_for_character("unknown", "OOO", locale),
                 max_output_tokens=150,
                 temperature=0.7,
             )

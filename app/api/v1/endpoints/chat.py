@@ -45,10 +45,10 @@ async def send_message(
 ):
     try:
         if current_user is None:
-            result = await send_guest_chat_message(request.content)
+            result = await send_guest_chat_message(request.content, request.locale)
             return ChatSendResponse(**result)
             
-        result = await send_chat_message(current_user, request.content)
+        result = await send_chat_message(current_user, request.content, request.locale)
         return ChatSendResponse(**result)
     except ValueError as e:
         raise HTTPException(
@@ -66,7 +66,7 @@ async def send_guest_message(
     request: ChatMessageRequest,
 ):
     try:
-        result = await send_guest_chat_message(request.content)
+        result = await send_guest_chat_message(request.content, request.locale)
         return ChatSendResponse(**result)
     except ValueError as e:
         raise HTTPException(
