@@ -21,6 +21,7 @@ class UserStatsResponse(BaseModel):
     intimacy: int
     dailyChatExp: int
     isOnboardingDone: bool
+    learningTickets: int
 
 
 class EquippedPartsResponse(BaseModel):

@@ -4,27 +4,14 @@ from datetime import datetime, timezone
 
 from app.models.user import User
 from app.models.academy import KnowledgeCard, CardResponse
+from app.services.user_service import check_daily_reset
 
 
-def _check_daily_reset(user: User) -> bool:
-    """유저의 일일 초기화 상태를 확인하고 필요시 초기화합니다."""
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    is_reset = False
-    
-    if user.stats.last_daily_reset != today_str:
-        user.stats.academy_tickets = 5
-        user.stats.ticket_recharges_today = 0
-        user.stats.daily_chat_exp = 0
-        user.stats.stamina = 20  # 매일 고정 20 초기화
-        user.stats.last_daily_reset = today_str
-        is_reset = True
-        
-    return is_reset
 
 async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
     """일일 지식카드 5장을 조회합니다. (임시로 랜덤 5장)"""
     # 1. 일일 초기화 체크
-    if _check_daily_reset(user):
+    if check_daily_reset(user):
         await user.save()
         
     # 2. 사실상 프론트엔드에서 ticketIndex로 페이지네이션/요청을 구분합니다.
@@ -57,10 +44,10 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
 async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dict:
     """지식 카드 응답을 제출하고 정답 여부를 판별하여 보상을 지급합니다."""
     # 1. 일일 초기화 및 티켓 검사
-    if _check_daily_reset(user):
+    if check_daily_reset(user):
         await user.save()
         
-    if user.stats.academy_tickets <= 0:
+    if user.stats.learning_tickets <= 0:
         raise ValueError("남은 아카데미 티켓이 없습니다. 광고 충전이 필요합니다.")
         
     # 2. 카드 조회
@@ -79,7 +66,7 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         is_correct = True
         
     # 4. 보상 지급 및 티켓 차감 (정답 시 보상 지급)
-    user.stats.academy_tickets -= 1
+    user.stats.learning_tickets -= 1
     
     exp_gained = 0
     gold_gained = 0
@@ -128,10 +115,10 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
 async def reject_card_answer(user: User, card_id: str) -> dict:
     """Vote 타입 카드 등에서 둘 다 별로('Reject')를 선택한 경우 처리합니다."""
     # 티켓은 차감할지 말지에 대한 기획 정책: 일반적으로 차감.
-    if _check_daily_reset(user):
+    if check_daily_reset(user):
         await user.save()
         
-    if user.stats.academy_tickets <= 0:
+    if user.stats.learning_tickets <= 0:
         raise ValueError("남은 아카데미 티켓이 없습니다.")
         
     from bson import ObjectId
@@ -143,7 +130,7 @@ async def reject_card_answer(user: User, card_id: str) -> dict:
     if not card:
         raise ValueError("카드를 찾을 수 없습니다.")
         
-    user.stats.academy_tickets -= 1
+    user.stats.learning_tickets -= 1
     
     # reject 시 소량의 신뢰도 보상(참여 보상)을 줄지 여부 결정, 일단 없음.
     await user.save()
@@ -164,19 +151,19 @@ async def reject_card_answer(user: User, card_id: str) -> dict:
 
 async def recharge_ticket(user: User) -> dict:
     """하루 최대 5번 광고 시청 후 티켓을 1장 충전합니다."""
-    if _check_daily_reset(user):
+    if check_daily_reset(user):
         await user.save()
         
     if user.stats.ticket_recharges_today >= 5:
         raise ValueError("하루 최대 티켓 충전 횟수(5회)를 초과했습니다.")
         
-    user.stats.academy_tickets += 1
+    user.stats.learning_tickets += 1
     user.stats.ticket_recharges_today += 1
     await user.save()
     
     return {
         "success": True,
-        "ticketsRemaining": user.stats.academy_tickets,
+        "ticketsRemaining": user.stats.learning_tickets,
         "rechargesToday": user.stats.ticket_recharges_today,
         "message": "티켓이 1장 충전되었습니다."
     }

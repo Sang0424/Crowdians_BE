@@ -20,7 +20,9 @@ class UserStatsResponse(BaseModel):
     courage: int
     intimacy: int
     dailyChatExp: int
+    dailyPetCount: int
     isOnboardingDone: bool
+    learningTickets: int
 
 class GuestStatsSyncRequest(BaseModel):
     exp_gained: int

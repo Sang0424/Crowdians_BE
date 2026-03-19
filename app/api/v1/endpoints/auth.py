@@ -164,10 +164,10 @@ async def update_nickname(
     current_user: CurrentUser,
 ):
     # 예약된 닉네임 사용 금지
-    if request.nickname == "크라우디언":
+    if request.nickname in ("크라우디언", "크라우디언즈", "Crowdians", "crowdians", "Crowdian", "crowdian"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="'크라우디언'은 설정할 수 없는 닉네임입니다.",
+            detail="사용할 수 없는 닉네임입니다.",
         )
 
     # 닉네임 중복 검사
@@ -182,6 +182,7 @@ async def update_nickname(
         )
 
     current_user.nickname = request.nickname
+    current_user.stats.is_onboarding_done = True
     await current_user.save()
 
     return NicknameResponse(

@@ -29,6 +29,7 @@ def user_to_response(user: User) -> UserResponse:
             intimacy=user.stats.intimacy,
             dailyChatExp=user.stats.daily_chat_exp,
             isOnboardingDone=user.stats.is_onboarding_done,
+            learningTickets=user.stats.learning_tickets,
         ),
         character=CharacterResponse(
             type=user.character.type,

@@ -63,6 +63,11 @@ def _generate_random_node(depth: int) -> AdventureNode:
 
 async def start_adventure(user: User) -> AdventureSession:
     """새로운 모험을 시작합니다. 기존 진행중인 건 모두 실패처리하거나 무시합니다."""
+    # 1. 일일 초기화 체크
+    from app.services.user_service import check_daily_reset
+    if check_daily_reset(user):
+        await user.save()
+        
     # 기존 active 세션이 있다면 그냥 놔두거나 gameover 처리 가능.
     # 여기서는 그냥 새로 덮어쓰기 위해 새 문서를 만듭니다.
     

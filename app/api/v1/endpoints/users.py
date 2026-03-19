@@ -17,7 +17,8 @@ from app.services.user_service import (
     get_user_by_uid,
     delete_user,
     get_user_activities,
-    sync_guest_stats as sync_guest_stats_service
+    sync_guest_stats as sync_guest_stats_service,
+    check_daily_reset
 )
 
 router = APIRouter()
@@ -42,7 +43,9 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             courage=user.stats.courage,
             intimacy=user.stats.intimacy,
             dailyChatExp=user.stats.daily_chat_exp,
+            dailyPetCount=user.stats.daily_pet_count,
             isOnboardingDone=user.stats.is_onboarding_done,
+            learningTickets=user.stats.academy_tickets,
         ),
         character=CharacterResponse(
             type=user.character.type,
@@ -74,6 +77,24 @@ async def get_user_profile(uid: str):
         from app.core.exceptions import NotFoundError
         raise NotFoundError("User")
     return _user_to_profile(user)
+
+
+# ══════════════════════════════════════
+# GET /users/me — 내 프로필 조회
+# ══════════════════════════════════════
+
+@router.get(
+    "/users/me",
+    response_model=UserProfileResponse,
+    summary="내 프로필 조회",
+    description="현재 로그인한 유저의 프로필을 조회합니다. (일일 초기화 포함)",
+)
+async def get_my_profile(
+    current_user: CurrentUser,
+):
+    if check_daily_reset(current_user):
+        await current_user.save()
+    return _user_to_profile(current_user)
 
 
 # ══════════════════════════════════════
@@ -159,5 +180,61 @@ async def sync_guest_stats(
         courage=stats.courage,
         intimacy=stats.intimacy,
         dailyChatExp=stats.daily_chat_exp,
+        dailyPetCount=stats.daily_pet_count,
         isOnboardingDone=stats.is_onboarding_done,
+    )
+
+
+# ══════════════════════════════════════
+# POST /users/me/pet — 캐릭터 쓰다듬기
+# ══════════════════════════════════════
+
+@router.post(
+    "/users/me/pet",
+    response_model=UserStatsResponse,
+    summary="캐릭터 쓰다듬기",
+    description="캐릭터를 쓰다듬어 친밀도를 올리고 일일 횟수를 기록합니다 (최대 30회/일)",
+)
+async def pet_character(
+    current_user: CurrentUser,
+):
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    
+    # 일일 초기화 체크 (기타 스탯용)
+    check_daily_reset(current_user)
+    
+    # 쓰다듬기 일일 초기화
+    if current_user.stats.last_pet_date is None or current_user.stats.last_pet_date.date() != now.date():
+        current_user.stats.daily_pet_count = 0
+        current_user.stats.last_pet_date = now
+
+    if current_user.stats.daily_pet_count >= 30:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="오늘은 이미 충분히 쓰다듬었습니다"
+        )
+    
+    current_user.stats.daily_pet_count += 1
+    current_user.stats.intimacy += 1
+    current_user.stats.last_pet_date = now
+    
+    await current_user.save()
+    
+    stats = current_user.stats
+    return UserStatsResponse(
+        level=stats.level,
+        exp=stats.exp,
+        maxExp=stats.max_exp,
+        gold=stats.gold,
+        stamina=stats.stamina,
+        maxStamina=stats.max_stamina,
+        trust=stats.trust,
+        intelligence=stats.intelligence,
+        courage=stats.courage,
+        intimacy=stats.intimacy,
+        dailyChatExp=stats.daily_chat_exp,
+        dailyPetCount=stats.daily_pet_count,
+        isOnboardingDone=stats.is_onboarding_done,
+        learningTickets=stats.learning_tickets,
     )

@@ -33,7 +33,6 @@ async def list_rankings(
                 stamina=u.stats.stamina,
                 maxStamina=u.stats.max_stamina,
                 gold=u.stats.gold,
-                title=u.stats.title,
                 academyTickets=u.stats.academy_tickets,
             )
             

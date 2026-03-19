@@ -31,6 +31,11 @@ async def send_chat_message(
     유저 메시지를 받아 Gemini API로 전달하고,
     응답을 받아 저장하며 스탯을 갱신합니다.
     """
+    # 0. 일일 초기화 체크
+    from app.services.user_service import check_daily_reset
+    if check_daily_reset(user):
+        await user.save()
+
     # 1. 스태미나 확인 (Stamina 1 소모)
     if user.stats.stamina < 1:
         raise ValueError("스태미나가 부족합니다.")
@@ -94,7 +99,7 @@ async def send_chat_message(
         user.stats.daily_chat_exp += exp_gain
         exp_gained = exp_gain
         
-    user.stats.intimacy += 1
+    # user.stats.intimacy += 1 (지시: 채팅 시 친밀도 상승 제거)
     
     # 레벨업 로직 (예: max_exp 초과 시)
     if user.stats.exp >= user.stats.max_exp:
@@ -116,7 +121,7 @@ async def send_chat_message(
         },
         "expGained": exp_gained,
         "staminaConsumed": 1,
-        "intimacyGained": 1,
+        "intimacyGained": 0,
     }
 
 async def clear_chat_history(uid: str) -> None:
@@ -211,6 +216,6 @@ async def send_guest_chat_message(
         },
         "expGained": 2,
         "staminaConsumed": 1,
-        "intimacyGained": 1,
+        "intimacyGained": 0,
         "requiresLogin": False
     }

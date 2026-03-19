@@ -111,7 +111,7 @@ async def get_chat_history(
     items = conv.messages[start:end] if start < end else []
     
     msg_responses = [
-        ChatMessageResponse(role=msg.role, content=msg.content, createdAt=msg.created_at)
+        ChatMessageResponse(role=msg.role, content=msg.content, createdAt=msg.createdAt)
         for msg in items
     ]
     
