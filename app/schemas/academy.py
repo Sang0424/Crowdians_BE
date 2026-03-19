@@ -2,6 +2,10 @@
 
 from pydantic import BaseModel, Field
 
+class StartSessionResponse(BaseModel):
+    success: bool
+    learningTickets: int
+
 class KnowledgeCardResponse(BaseModel):
     id: str             # card._id 문자열
     type: str           # "vote" | "teach" | "quiz"

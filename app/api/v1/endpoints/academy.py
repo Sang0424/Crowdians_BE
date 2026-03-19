@@ -10,6 +10,7 @@ from app.schemas.academy import (
     CardSubmitResponse,
     CardRejectResponse,
     TicketRechargeResponse,
+    StartSessionResponse
 )
 from app.services.academy_service import (
     get_daily_cards,
@@ -21,6 +22,25 @@ from app.services.academy_service import (
 router = APIRouter()
 
 
+# ══════════════════════════════════════
+# POST /academy/start — 아카데미 세션 시작 (티켓 차감)
+# ══════════════════════════════════════
+@router.post(
+    "/academy/start",
+    response_model=StartSessionResponse,
+    summary="아카데미 세션 시작 (티켓 차감)",
+    description="아카데미 시작 버튼을 눌렀을 때 티켓 1장을 차감합니다.",
+)
+async def start_academy(current_user: CurrentUser):
+    from app.services.academy_service import start_academy_session
+    try:
+        result = await start_academy_session(current_user)
+        return StartSessionResponse(**result)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
 # ══════════════════════════════════════
 # GET /academy/cards — 학습카드 목록 조회
 # ══════════════════════════════════════

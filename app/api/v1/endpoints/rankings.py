@@ -33,14 +33,13 @@ async def list_rankings(
                 stamina=u.stats.stamina,
                 maxStamina=u.stats.max_stamina,
                 gold=u.stats.gold,
-                academyTickets=u.stats.academy_tickets,
+                learningTickets=u.stats.learning_tickets,
             )
             
             ranking_list.append(
                 RankingUserResponse(
                     userId=u.uid,
                     nickname=u.nickname,
-                    profileImage=u.profile_image,
                     stats=stats_resp,
                 )
             )

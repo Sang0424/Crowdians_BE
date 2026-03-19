@@ -105,6 +105,7 @@ async def send_chat_message(
     if user.stats.exp >= user.stats.max_exp:
         user.stats.exp -= user.stats.max_exp
         user.stats.level += 1
+        user.stats.stamina = user.stats.max_stamina
         
     await user.save()
     

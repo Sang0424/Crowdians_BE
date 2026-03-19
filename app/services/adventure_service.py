@@ -166,6 +166,7 @@ async def select_adventure_node(user: User, session_id: str, choice_id: str) -> 
         if user.stats.exp >= user.stats.max_exp:
             user.stats.exp -= user.stats.max_exp
             user.stats.level += 1
+            user.stats.stamina = user.stats.max_stamina
             
         # 모험을 겪으며 용기 자체가 오름 (기획 예시)
         user.stats.courage += 1

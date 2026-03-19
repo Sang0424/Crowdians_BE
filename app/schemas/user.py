@@ -104,3 +104,10 @@ class UserActivitiesResponse(BaseModel):
 class DeleteAccountResponse(BaseModel):
     success: bool
     message: str
+
+
+# ── 캐릭터 설정 ──
+
+class CharacterTypeUpdateRequest(BaseModel):
+    """캐릭터 타입 업데이트 요청"""
+    type: str

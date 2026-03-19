@@ -12,7 +12,7 @@ def check_daily_reset(user: User) -> bool:
     is_reset = False
     
     if user.stats.last_daily_reset != today_str:
-        user.stats.learning_tickets = 5
+        user.stats.learning_tickets = 3
         user.stats.ticket_recharges_today = 0
         user.stats.daily_chat_exp = 0
         user.stats.stamina = 20  # 매일 고정 20 초기화

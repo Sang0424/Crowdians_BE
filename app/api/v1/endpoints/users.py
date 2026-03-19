@@ -12,6 +12,7 @@ from app.schemas.user import (
     UserActivitiesResponse,
     DeleteAccountResponse,
     GuestStatsSyncRequest,
+    CharacterTypeUpdateRequest,
 )
 from app.services.user_service import (
     get_user_by_uid,
@@ -45,7 +46,7 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             dailyChatExp=user.stats.daily_chat_exp,
             dailyPetCount=user.stats.daily_pet_count,
             isOnboardingDone=user.stats.is_onboarding_done,
-            learningTickets=user.stats.academy_tickets,
+            learningTickets=user.stats.learning_tickets,
         ),
         character=CharacterResponse(
             type=user.character.type,
@@ -238,3 +239,23 @@ async def pet_character(
         isOnboardingDone=stats.is_onboarding_done,
         learningTickets=stats.learning_tickets,
     )
+
+
+# ══════════════════════════════════════
+# PATCH /users/me/character/type — 캐릭터 타입 변경
+# ══════════════════════════════════════
+
+@router.patch(
+    "/users/me/character/type",
+    response_model=UserProfileResponse,
+    summary="캐릭터 타입 변경",
+    description="현재 유저의 캐릭터 타입을 변경합니다.",
+)
+async def update_character_type(
+    request: CharacterTypeUpdateRequest,
+    current_user: CurrentUser,
+):
+    current_user.character.type = request.type
+    await current_user.save()
+    
+    return _user_to_profile(current_user)

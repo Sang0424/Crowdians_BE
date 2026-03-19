@@ -46,7 +46,7 @@ class EquippedParts(BaseModel):
 
 class CharacterInfo(BaseModel):
     """캐릭터 정보 (임베디드 모델)"""
-    type: str = "Crowdy"
+    type: str = "unknown"
     equipped_parts: EquippedParts = Field(default_factory=EquippedParts)
     unlocked_parts: list[str] = Field(default_factory=list)
 

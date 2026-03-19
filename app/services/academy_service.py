@@ -41,14 +41,30 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
         for c in cards
     ]
 
+async def start_academy_session(user: User) -> dict:
+    if check_daily_reset(user):
+        await user.save()
+        
+    if user.stats.learning_tickets <= 0:
+        raise ValueError("남은 학습 티켓이 없습니다. 광고 충전이 필요합니다.")
+
+    if user.stats.trust < 100:
+        raise ValueError("신뢰도가 낮아 학습을 진행할 수 없습니다.")
+        
+    # 세션 시작 시 1장 차감
+    user.stats.learning_tickets -= 1
+    await user.save()
+    
+    return {
+        "success": True,
+        "learningTickets": user.stats.learning_tickets
+    }
+
 async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dict:
     """지식 카드 응답을 제출하고 정답 여부를 판별하여 보상을 지급합니다."""
     # 1. 일일 초기화 및 티켓 검사
     if check_daily_reset(user):
         await user.save()
-        
-    if user.stats.learning_tickets <= 0:
-        raise ValueError("남은 아카데미 티켓이 없습니다. 광고 충전이 필요합니다.")
         
     # 2. 카드 조회
     from bson import ObjectId
@@ -61,13 +77,8 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         raise ValueError("카드를 찾을 수 없습니다.")
         
     # 3. 채점
-    is_correct = False
-    if str(card.correct_answer) == str(answer):
-        is_correct = True
-        
-    # 4. 보상 지급 및 티켓 차감 (정답 시 보상 지급)
-    user.stats.learning_tickets -= 1
-    
+    is_correct = True
+
     exp_gained = 0
     gold_gained = 0
     trust_gained = 0
@@ -85,6 +96,7 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         if user.stats.exp >= user.stats.max_exp:
             user.stats.exp -= user.stats.max_exp
             user.stats.level += 1
+            user.stats.stamina = user.stats.max_stamina
             
         # 카드의 trust_count 증가 (골든 데이터셋 지표)
         card.trust_count += 1
@@ -109,7 +121,7 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         "rewardExp": exp_gained,
         "rewardGold": gold_gained,
         "rewardTrust": trust_gained,
-        "message": "정답입니다! 보상을 획득했습니다." if is_correct else "오답입니다. 다음 기회를 노려보세요!"
+        "message": "소중한 의견이 기록되었습니다! 보상을 획득하셨습니다."
     }
 
 async def reject_card_answer(user: User, card_id: str) -> dict:
@@ -117,9 +129,6 @@ async def reject_card_answer(user: User, card_id: str) -> dict:
     # 티켓은 차감할지 말지에 대한 기획 정책: 일반적으로 차감.
     if check_daily_reset(user):
         await user.save()
-        
-    if user.stats.learning_tickets <= 0:
-        raise ValueError("남은 아카데미 티켓이 없습니다.")
         
     from bson import ObjectId
     try:
@@ -129,9 +138,7 @@ async def reject_card_answer(user: User, card_id: str) -> dict:
         
     if not card:
         raise ValueError("카드를 찾을 수 없습니다.")
-        
-    user.stats.learning_tickets -= 1
-    
+
     # reject 시 소량의 신뢰도 보상(참여 보상)을 줄지 여부 결정, 일단 없음.
     await user.save()
     
