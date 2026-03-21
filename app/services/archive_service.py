@@ -154,17 +154,21 @@ async def toggle_trust_vote(user: User, answer_id: str) -> dict:
         
     await archive_answer_repo.update(db_obj=answer, obj_in={"voted_user_ids": answer.voted_user_ids, "trust_count": answer.trust_count})
     
+    # 추천/취소 시 작성자 Trust 스탯 증감
+    from app.db.repository.user_repository import user_repo
+    author = await user_repo.get_by_uid(answer.author_id)
+    if author:
+        # 매 추천마다 +5, 취소 시 -5
+        if is_trusted:
+            author.stats.trust += 5
+        else:
+            author.stats.trust -= 5
+        await user_repo.update(db_obj=author, obj_in={"stats": author.stats})
+
     # 신뢰도 보상 및 특별 로직 (trust_count == 10 달성 최초 1회 등)
     if is_trusted and answer.trust_count == 10:
-        # 해당 답변 작성자의 신뢰도 스탯 증가 등의 보상을 주거나,
         # KnowledgeCard로 자동 승격
         await _promote_to_knowledge_card(answer)
-        
-        # 글 작성자에게 스탯 보상 (예시)
-        author = await user_repo.get_by_uid(answer.author_id)
-        if author:
-            author.stats.trust += 5
-            await user_repo.update(db_obj=author, obj_in={"stats": author.stats})
 
     return {
         "isTrusted": is_trusted,
