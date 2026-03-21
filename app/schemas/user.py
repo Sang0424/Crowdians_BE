@@ -23,6 +23,7 @@ class UserStatsResponse(BaseModel):
     dailyPetCount: int
     isOnboardingDone: bool
     learningTickets: int
+    maxLearningTickets: int
 
 class GuestStatsSyncRequest(BaseModel):
     exp_gained: int

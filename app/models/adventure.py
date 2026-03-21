@@ -11,9 +11,9 @@ class AdventureChoice(BaseModel):
     """사건 내에서 유저가 선택할 수 있는 보기"""
     id: str                         # a, b, c 등
     text: str                       # 텍스트 내용
-    # 이 선택지를 골랐을 때 내부적으로 일어날 일(성공확률 보정, 데미지 양 등)
-    # 실제 기획에 맞게 유동적으로 운영. 여기서는 간단히 보정값 저장
-    courage_modifier: int = 0       # 이 선택시 용기 스탯 + 보정치로 성공률 계산
+    # 범용 스탯 판정: required_stat = "courage" | "intelligence" | "trust" | "intimacy" ...
+    required_stat: str = "courage"  # 판정에 사용할 스탯 이름
+    stat_modifier: int = 0          # 해당 스탯에 추가되는 보정치 (양수/음수)
     hp_penalty_on_fail: int = 10    # 실패 시 잃는 HP
 
 

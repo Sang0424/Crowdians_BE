@@ -24,6 +24,7 @@ class UserStats(BaseModel):
     last_pet_date: Optional[datetime] = None # 마지막으로 쓰다듬은 날짜
     last_daily_reset: str = ""    # 마지막 일일 초기화 날짜 (YYYY-MM-DD 포맷)
     is_onboarding_done: bool = False # 온보딩 완료 여부
+    title: str = ""               # 칭호 (텍스트 기반 보상)
 
     @property
     def max_exp(self) -> int:
@@ -32,8 +33,13 @@ class UserStats(BaseModel):
 
     @property
     def max_stamina(self) -> int:
-        """최대 스태미너 (고정값)"""
-        return 20
+        """최대 스태미너: 20 + (친밀도 // 50)"""
+        return 20 + (self.intimacy // 50)
+
+    @property
+    def max_learning_tickets(self) -> int:
+        """최대 아카데미 티켓 수: 3 + (신뢰도 // 200)"""
+        return 3 + (self.trust - 1000) // 200
 
 
 class EquippedParts(BaseModel):

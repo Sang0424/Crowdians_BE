@@ -41,7 +41,8 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     - 최대한 핵심적인 내용만을 말하고 부가설명은 하지마.
     - 답변은 3문장을 넘기지 마.
     [언어 설정 (가장 중요 ⭐)]
-    - 사용자의 질문 언어와 상관없이 너는 반드시 **{target_language}**로 번역/작성해서 대답해야 해.
+    - 가장 우선적으로 사용자의 질문언어에 맞춰서 답변해.
+    - 만약 사용자가 여러 언어로 질문하면 {target_language}로 답변해.
     """
 
     if character_type == "astra":
@@ -110,6 +111,25 @@ async def send_chat_message(
         contents.append(types.Content(role=msg.role, parts=[types.Part.from_text(text=msg.content)]))
     
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message_content)]))
+
+    my_safety_settings = [
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        ),
+    ]
     
     try:
         response = client.models.generate_content(
@@ -119,6 +139,7 @@ async def send_chat_message(
                 system_instruction=system_instruction,
                 max_output_tokens=150,
                 temperature=0.7,
+                safety_settings=my_safety_settings,
             )
         )
         ai_response_text = response.text
@@ -241,6 +262,25 @@ async def send_guest_chat_message(
     게스트 메시지를 받아 Gemini API로 전달하고,
     응답을 받아 저장하며 스탯을 갱신합니다.
     """
+
+    my_safety_settings = [
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        ),
+    ]
     try:
         response = client.models.generate_content(
             model=MODEL_NAME,
@@ -249,6 +289,7 @@ async def send_guest_chat_message(
                 system_instruction=get_system_prompt_for_character("unknown", "OOO", locale),
                 max_output_tokens=150,
                 temperature=0.7,
+                safety_settings=my_safety_settings
             )
         )
         ai_message_text = response.text
