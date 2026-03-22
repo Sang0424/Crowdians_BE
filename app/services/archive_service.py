@@ -10,7 +10,7 @@ from app.models.academy import KnowledgeCard
 
 from app.db.repository.archive_repository import archive_repo, archive_answer_repo
 
-async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", bounty: int = 0) -> str:
+async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", bounty: int = 0, locale: str = "ko") -> str:
     """새로운 지식 도서관 질문을 등록합니다."""
     post = await archive_repo.create(obj_in={
         "title": title,
@@ -19,25 +19,39 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
         "category": category,
         "bounty": bounty,
         "author_id": user.uid,
+        "locale": locale,
     })
+    
+    # 아카데미(Academy)에서 풀 수 있도록 KnowledgeCard 생성
+    card = KnowledgeCard(
+        type="teach",
+        question=f"[{category}] {title}\n\n{content}",
+        choices=[],
+        correct_answer="",
+        bounty=bounty,
+        linked_post_id=str(post.id)
+    )
+    await card.insert()
+    
     return str(post.id)
 
 
-async def get_archive_list(sort: str, skip: int = 0, limit: int = 10) -> tuple[list[ArchivePost], int]:
+async def get_archive_list(sort: str, skip: int = 0, limit: int = 10, locale: str = "ko") -> tuple[list[ArchivePost], int]:
     """질문 목록을 페이지네이션으로 조회합니다. (posts, total_count) 반환."""
     # sort param (latest | popular | bounty | needed)
     sort_query = []
     if sort == "popular":
         sort_query = [("answer_count", -1), ("created_at", -1)]
-    elif sort == "bounty":
+    elif sort == "bounty":  
         sort_query = [("bounty", -1), ("created_at", -1)]
     elif sort == "needed":
         sort_query = [("answer_count", 1), ("created_at", -1)]
     else:
         sort_query = [("created_at", -1)]
 
-    total_count = await ArchivePost.find_all().count()
-    posts = await archive_repo.get_multi(skip=skip, limit=limit, sort=sort_query)
+    query = archive_repo.model.find(archive_repo.model.locale == locale)
+    total_count = await query.count()
+    posts = await query.sort(sort_query).skip(skip).limit(limit).to_list()
     return posts, total_count
 
 

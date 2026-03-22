@@ -76,6 +76,14 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
     if not card:
         raise ValueError("카드를 찾을 수 없습니다.")
         
+    # 만약 아카데미 카드가 Archive 연동 카드라면, 아카이브 답변으로도 등록합니다 (동기화)
+    if getattr(card, "linked_post_id", None):
+        from app.services.archive_service import submit_archive_answer
+        try:
+            await submit_archive_answer(user, card.linked_post_id, str(answer))
+        except Exception as e:
+            print(f"Failed to submit archive answer via academy: {e}")
+
     # 3. 채점
     is_correct = True
 

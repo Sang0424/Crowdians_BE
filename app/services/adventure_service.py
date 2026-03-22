@@ -28,84 +28,84 @@ def _generate_random_node(depth: int) -> AdventureNode:
     templates = [
         {
             "type": "monster",
-            "title": "야생의 고블린 무리!",
-            "desc": "어두운 골목에서 고블린 무리가 나타났다.",
+            "title": "node.monster.title",
+            "desc": "node.monster.desc",
             "choices": [
                 {
                     "id": "fight",
-                    "text": "정면 돌파한다!",
+                    "text": "node.monster.fight.text",
                     "required_stat": "courage",
                     "mod": -10,
-                    "penalty": 20,
+                    "penalty": 30,
                 },
                 {
                     "id": "run",
-                    "text": "재빠르게 도망친다.",
+                    "text": "node.monster.run.text",
                     "required_stat": "courage",
-                    "mod": +20,
-                    "penalty": 5,
+                    "mod": +10,
+                    "penalty": 15,
                 },
             ],
         },
         {
             "type": "trap",
-            "title": "수상한 보물상자",
-            "desc": "길 한가운데에 빛나는 보물상자가 놓여있다.",
+            "title": "node.trap.title",
+            "desc": "node.trap.desc",
             "choices": [
                 {
                     "id": "open",
-                    "text": "당장 열어본다.",
+                    "text": "node.trap.open.text",
                     "required_stat": "intelligence",
                     "mod": -20,
-                    "penalty": 30,
+                    "penalty": 20,
                 },
                 {
                     "id": "ignore",
-                    "text": "무시하고 지나간다.",
+                    "text": "node.trap.ignore.text",
                     "required_stat": "intelligence",
-                    "mod": +50,
-                    "penalty": 0,
+                    "mod": +30,
+                    "penalty": 10,
                 },
             ],
         },
         {
             "type": "treasure",
-            "title": "요정의 샘물",
-            "desc": "지친 몸을 뉘일 수 있는 맑은 샘물을 발견했다.",
+            "title": "node.treasure.title",
+            "desc": "node.treasure.desc",
             "choices": [
                 {
                     "id": "drink",
-                    "text": "물을 마신다.",
+                    "text": "node.treasure.drink.text",
                     "required_stat": "trust",
-                    "mod": +30,
+                    "mod": +20,
                     "penalty": 0,
                 },
                 {
                     "id": "rest",
-                    "text": "샘물 옆에서 잠시 쉰다.",
+                    "text": "node.treasure.rest.text",
                     "required_stat": "trust",
-                    "mod": +40,
+                    "mod": +30,
                     "penalty": 0,
                 },
             ],
         },
         {
             "type": "npc",
-            "title": "수상한 상인",
-            "desc": "낯선 상인이 말을 걸어온다. 뭔가 숨기는 것 같지만 친절해 보인다.",
+            "title": "node.npc.title",
+            "desc": "node.npc.desc",
             "choices": [
                 {
                     "id": "trade",
-                    "text": "물건을 사본다.",
+                    "text": "node.npc.trade.text",
                     "required_stat": "intimacy",
-                    "mod": +10,
-                    "penalty": 15,
+                    "mod": +0,
+                    "penalty": 30,
                 },
                 {
                     "id": "talk",
-                    "text": "말을 나눠본다.",
+                    "text": "node.npc.talk.text",
                     "required_stat": "intimacy",
-                    "mod": +30,
+                    "mod": +20,
                     "penalty": 0,
                 },
             ],
@@ -196,14 +196,14 @@ async def select_adventure_node(user: User, session_id: str, choice_id: str) -> 
         raise ValueError("잘못된 선택지입니다.")
 
     # ── 성공확률 계산 ───────────────────────────────────────────────────────
-    # 기본 50% + (required_stat 값 // 10) + stat_modifier
+    # 기본 30% + (required_stat 값 // 10) + stat_modifier
     # 판정 스탯은 선택지마다 courage / intelligence / trust / intimacy 중 하나
     stat_value = _get_stat_value(user, selected_choice.required_stat)
-    base_success_rate = 50
+    base_success_rate = 30
     final_rate = base_success_rate + (stat_value // 10) + selected_choice.stat_modifier
 
-    # 최소 20%, 최대 85% 로 클램핑
-    final_rate = max(20, min(85, final_rate))
+    # 최소 10%, 최대 80% 로 클램핑
+    final_rate = max(10, min(80, final_rate))
 
     roll = random.randint(1, 100)
     is_success = roll <= final_rate

@@ -25,6 +25,7 @@ class ArchivePost(Document):
     category: str = "general"
     bounty: int = 0
     author_id: str                              # 글 작성자 User uid
+    locale: str = "ko"
     
     # 답변들의 ID 목록 (ArchiveAnswer Document의 id)
     # 또는 역방향 참조를 위해 안 들고 있어도 무방합니다. (보통 RDBMS처럼)

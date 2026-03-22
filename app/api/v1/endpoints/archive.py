@@ -41,9 +41,10 @@ async def get_archives(
     sort: str = Query("latest", pattern="^(latest|popular|bounty|needed)$"),
     page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
     size: int = Query(10, ge=1, le=50, description="페이지당 아이템 수"),
+    locale: str = Query("ko", description="언어 설정"),
 ):
     skip = (page - 1) * size
-    posts, total_count = await get_archive_list(sort, skip=skip, limit=size)
+    posts, total_count = await get_archive_list(sort, skip=skip, limit=size, locale=locale)
     
     author_ids = list(set([p.author_id for p in posts]))
     from beanie.operators import In
@@ -132,7 +133,8 @@ async def create_post(
             title=request.title,
             content=request.content,
             category=request.category,
-            bounty=request.bounty
+            bounty=request.bounty,
+            locale=request.locale,
         )
         return ArchivePostSubmitResponse(
             success=True,

@@ -17,6 +17,7 @@ class KnowledgeCard(Document):
     
     # RLHF나 특정 출처가 있다면 기록
     source_message_id: str | None = None
+    linked_post_id: str | None = None
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

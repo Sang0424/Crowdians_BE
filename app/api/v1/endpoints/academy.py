@@ -53,7 +53,7 @@ async def start_academy(current_user: CurrentUser):
 )
 async def get_cards(
     current_user: CurrentUser,
-    ticketIndex: int = Query(default=1, ge=1, description="몇 번째 티켓(카드)을 요청하는지 인덱스"),
+    ticketIndex: int = Query(default=1, description="몇 번째 티켓(카드)을 요청하는지 인덱스"),
 ):
     # 실제 프로덕션에서는 ticketIndex나 유저의 오늘 진행도에 따라 카드를 계산합니다.
     cards = await get_daily_cards(current_user, ticketIndex)

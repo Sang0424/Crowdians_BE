@@ -47,6 +47,7 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             dailyPetCount=user.stats.daily_pet_count,
             isOnboardingDone=user.stats.is_onboarding_done,
             learningTickets=user.stats.learning_tickets,
+            maxLearningTickets=user.stats.max_learning_tickets,
         ),
         character=CharacterResponse(
             type=user.character.type,
@@ -184,6 +185,7 @@ async def sync_guest_stats(
         dailyPetCount=stats.daily_pet_count,
         isOnboardingDone=stats.is_onboarding_done,
         learningTickets = stats.learning_tickets,
+        maxLearningTickets=stats.max_learning_tickets,
     )
 
 
@@ -239,6 +241,7 @@ async def pet_character(
         dailyPetCount=stats.daily_pet_count,
         isOnboardingDone=stats.is_onboarding_done,
         learningTickets=stats.learning_tickets,
+        maxLearningTickets=stats.max_learning_tickets,
     )
 
 
