@@ -62,6 +62,22 @@ def _user_to_profile(user: User) -> UserProfileResponse:
         createdAt=user.created_at,
     )
 
+# ══════════════════════════════════════
+# GET /users/me — 내 프로필 조회
+# ══════════════════════════════════════
+
+@router.get(
+    "/users/me",
+    response_model=UserProfileResponse,
+    summary="내 프로필 조회",
+    description="현재 로그인한 유저의 프로필을 조회합니다. (일일 초기화 포함)",
+)
+async def get_my_profile(
+    current_user: CurrentUser,
+):
+    if check_daily_reset(current_user):
+        await current_user.save()
+    return _user_to_profile(current_user)
 
 # ══════════════════════════════════════
 # GET /users/{uid} — 다른 유저 프로필 조회
@@ -79,24 +95,6 @@ async def get_user_profile(uid: str):
         from app.core.exceptions import NotFoundError
         raise NotFoundError("User")
     return _user_to_profile(user)
-
-
-# ══════════════════════════════════════
-# GET /users/me — 내 프로필 조회
-# ══════════════════════════════════════
-
-@router.get(
-    "/users/me",
-    response_model=UserProfileResponse,
-    summary="내 프로필 조회",
-    description="현재 로그인한 유저의 프로필을 조회합니다. (일일 초기화 포함)",
-)
-async def get_my_profile(
-    current_user: CurrentUser,
-):
-    if check_daily_reset(current_user):
-        await current_user.save()
-    return _user_to_profile(current_user)
 
 
 # ══════════════════════════════════════

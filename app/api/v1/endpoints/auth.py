@@ -191,17 +191,17 @@ async def update_nickname(
     )
 
 
-# ══════════════════════════════════════
-# GET /users/me — 내 정보 조회
-# ══════════════════════════════════════
+# # ══════════════════════════════════════
+# # GET /users/me — 내 정보 조회
+# # ══════════════════════════════════════
 
-@router.get(
-    "/users/me",
-    response_model=UserResponse,
-    summary="내 정보 조회",
-    description="현재 로그인한 유저의 전체 정보를 반환합니다.",
-)
-async def get_me(
-    current_user: CurrentUser,
-):
-    return user_to_response(current_user)
+# @router.get(
+#     "/users/me",
+#     response_model=UserResponse,
+#     summary="내 정보 조회",
+#     description="현재 로그인한 유저의 전체 정보를 반환합니다.",
+# )
+# async def get_me(
+#     current_user: CurrentUser,
+# ):
+#     return user_to_response(current_user)

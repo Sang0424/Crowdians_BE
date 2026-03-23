@@ -10,6 +10,7 @@ from app.core.redis import get_redis
 from app.core.security import create_access_token, create_refresh_token
 from app.models.user import User, UserStats, CharacterInfo
 from jose import JWTError, jwt
+from app.services.user_service import check_daily_reset
 
 
 # ── Firebase Admin SDK 초기화 ──
@@ -67,6 +68,7 @@ async def get_or_create_user(
     if user is not None:
         # ── 기존 유저: 로그인 시간만 갱신 ──
         user.last_login_at = datetime.now(timezone.utc)
+        check_daily_reset(user)
         await user.save()
         return user, False
 

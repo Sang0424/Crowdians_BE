@@ -1,9 +1,10 @@
 # app/api/v1/endpoints/rankings.py
 
 from fastapi import APIRouter, Query
+import logging # 로그 확인용
 
 from app.schemas.ranking import RankingListResponse, RankingUserResponse
-from app.schemas.user import UserStatsResponse
+from app.schemas.user import UserStatsResponse, CharacterResponse, EquippedPartsResponse
 from app.services.ranking_service import get_top_rankings_by_type
 
 router = APIRouter()
@@ -34,13 +35,37 @@ async def list_rankings(
                 maxStamina=u.stats.max_stamina,
                 gold=u.stats.gold,
                 learningTickets=u.stats.learning_tickets,
+                intelligence=u.stats.intelligence,
+                intimacy=u.stats.intimacy,
+                dailyChatExp=u.stats.daily_chat_exp,
+                dailyPetCount=u.stats.daily_pet_count,
+                isOnboardingDone=u.stats.is_onboarding_done,
+                maxLearningTickets=u.stats.max_learning_tickets,
             )
+
+            equipped_parts_resp = None
+            if u.character and u.character.equipped_parts:
+                equipped_parts_resp = EquippedPartsResponse(
+                    head=u.character.equipped_parts.head,
+                    hand=u.character.equipped_parts.hand,
+                    body=u.character.equipped_parts.body,
+                    effect=u.character.equipped_parts.effect,
+                )
+            
+            char_resp = None
+            if u.character:
+                char_resp = CharacterResponse(
+                    type=u.character.type,
+                    equippedParts=equipped_parts_resp,          # 카멜 케이스 적용 완료
+                    unlockedParts=u.character.unlocked_parts or [], # 카멜 케이스 적용 완료
+                )
             
             ranking_list.append(
                 RankingUserResponse(
                     userId=u.uid,
                     nickname=u.nickname,
                     stats=stats_resp,
+                    character=char_resp
                 )
             )
             
@@ -50,4 +75,5 @@ async def list_rankings(
         )
         
     except ValueError as e:
+        logging.error(f"Ranking error: {e}") # 에러를 터미널에 출력
         return RankingListResponse(rankings=[], type=type)

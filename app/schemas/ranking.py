@@ -1,13 +1,14 @@
 # app/schemas/ranking.py
 
+from typing import Optional
 from pydantic import BaseModel, Field
-from app.schemas.user import UserStatsResponse
+from app.schemas.user import UserStatsResponse, CharacterResponse
 
 
 class RankingUserResponse(BaseModel):
     userId: str
     nickname: str
-    profileImage: str
+    character: Optional[CharacterResponse] = None
     stats: UserStatsResponse
 
 
