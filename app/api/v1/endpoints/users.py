@@ -60,6 +60,7 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             unlockedParts=user.character.unlocked_parts,
         ),
         createdAt=user.created_at,
+        title = user.title
     )
 
 # ══════════════════════════════════════

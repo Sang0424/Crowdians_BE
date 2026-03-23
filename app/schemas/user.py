@@ -53,6 +53,7 @@ class UserProfileResponse(BaseModel):
     stats: UserStatsResponse
     character: CharacterResponse
     createdAt: datetime
+    title: str | None
 
 
 # ── 유저 활동 탭 ──

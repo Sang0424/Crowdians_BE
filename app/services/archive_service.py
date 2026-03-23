@@ -1,7 +1,7 @@
 # app/services/archive_service.py
 
 from datetime import datetime, timezone
-from bson import ObjectId
+from beanie import PydanticObjectId
 
 from app.models.user import User
 from app.models.archive import ArchivePost, ArchiveAnswer
@@ -20,6 +20,7 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
         "bounty": bounty,
         "author_id": user.uid,
         "locale": locale,
+        "character_type": user.character.type if user.character else "unknown",
     })
     
     # 아카데미(Academy)에서 풀 수 있도록 KnowledgeCard 생성
@@ -41,13 +42,13 @@ async def get_archive_list(sort: str, skip: int = 0, limit: int = 10, locale: st
     # sort param (latest | popular | bounty | needed)
     sort_query = []
     if sort == "popular":
-        sort_query = [("answer_count", -1), ("created_at", -1)]
+        sort_query = [("answer_count", -1), ("createdAt", -1)]
     elif sort == "bounty":  
-        sort_query = [("bounty", -1), ("created_at", -1)]
+        sort_query = [("bounty", -1), ("createdAt", -1)]
     elif sort == "needed":
-        sort_query = [("answer_count", 1), ("created_at", -1)]
+        sort_query = [("answer_count", 1), ("createdAt", -1)]
     else:
-        sort_query = [("created_at", -1)]
+        sort_query = [("createdAt", -1)]
 
     query = archive_repo.model.find(archive_repo.model.locale == locale)
     total_count = await query.count()
@@ -58,9 +59,12 @@ async def get_archive_list(sort: str, skip: int = 0, limit: int = 10, locale: st
 async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
     """질문 상세 정보와 상위 답변들을 가져옵니다."""
     try:
-        post = await ArchivePost.get(ObjectId(post_id))
-    except Exception:
-        raise ValueError("유효하지 않은 Post ID입니다.")
+        post = await archive_repo.get_by_id(post_id)
+    except Exception as e:
+        import traceback
+        print(f"Error in detail fetching post: {e}") 
+        traceback.print_exc()
+        raise ValueError(f"유효하지 않은 Post ID입니다. 에러: {e}")
         
     if not post:
         raise ValueError("질문 글을 찾을 수 없습니다.")
@@ -84,6 +88,7 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
             "nickname": u.nickname if u else "크라우디언",
             "trustCount": u.stats.trust if u else 0,
             "level": u.stats.level if u else 1,
+            "characterType": u.character.type if u and getattr(u, 'character', None) else "unknown",
         }
         answer_responses.append({
             "id": str(ans.id),
@@ -92,7 +97,7 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
             "content": ans.content,
             "trustCount": ans.trust_count,
             "isTrustedByMe": user_uid in ans.voted_user_ids,
-            "createdAt": ans.created_at,
+            "createdAt": ans.createdAt,
         })
         
     post_u = user_dict.get(post.author_id)
@@ -101,6 +106,7 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
         "nickname": post_u.nickname if post_u else "크라우디언",
         "trustCount": post_u.stats.trust if post_u else 0,
         "level": post_u.stats.level if post_u else 1,
+        "characterType": post_u.character.type if post_u and getattr(post_u, 'character', None) else "unknown",
     }
 
     return {
@@ -112,7 +118,8 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
         "bounty": post.bounty,
         "author": post_author_resp,
         "answerCount": post.answer_count,
-        "createdAt": post.created_at,
+        "createdAt": post.createdAt,
+        "characterType": post_author_resp["characterType"],
         "answers": answer_responses,
     }
 
@@ -121,8 +128,11 @@ async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
     """질문에 답변을 작성합니다."""
     try:
         post = await archive_repo.get_by_id(post_id)
-    except Exception:
-        raise ValueError("유효하지 않은 Post ID입니다.")
+    except Exception as e:
+        import traceback
+        print(f"Error in submit answer: {e}")
+        traceback.print_exc()
+        raise ValueError(f"유효하지 않은 Post ID입니다. 에러: {e}")
         
     if not post:
         raise ValueError("질문 글을 찾을 수 없습니다.")
@@ -135,8 +145,8 @@ async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
     
     # 캐싱용 answer_count 증가
     post.answer_count += 1
-    post.updated_at = datetime.now(timezone.utc)
-    await archive_repo.update(db_obj=post, obj_in={"answer_count": post.answer_count, "updated_at": post.updated_at})
+    post.updatedAt = datetime.now(timezone.utc)
+    await archive_repo.update(db_obj=post, obj_in={"answer_count": post.answer_count, "updatedAt": post.updatedAt})
     
     return str(answer.id)
 
@@ -144,7 +154,7 @@ async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
 async def toggle_trust_vote(user: User, answer_id: str) -> dict:
     """답변에 신뢰함(투표)을 토글합니다."""
     try:
-        answer = await archive_answer_repo.get(ObjectId(answer_id))
+        answer = await archive_answer_repo.get(PydanticObjectId(answer_id))
     except Exception:
         raise ValueError("유효하지 않은 Answer ID입니다.")
         

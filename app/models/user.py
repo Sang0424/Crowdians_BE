@@ -63,6 +63,7 @@ class User(Document):
     email: Optional[str] = None
     nickname: str 
     provider: str                     # google / discord / twitter
+    title: str | None = None
 
     stats: UserStats = Field(default_factory=UserStats)
     character: CharacterInfo = Field(default_factory=CharacterInfo)

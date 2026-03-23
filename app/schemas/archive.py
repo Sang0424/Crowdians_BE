@@ -11,6 +11,7 @@ class AuthorResponse(BaseModel):
     nickname: str
     trustCount: int
     level: int
+    characterType: str
 
 
 class ArchiveAnswerResponse(BaseModel):
@@ -45,6 +46,7 @@ class ArchivePostResponse(BaseModel):
     author: AuthorResponse
     answerCount: int
     createdAt: datetime
+    characterType: str
 
 
 class ArchivePostDetailResponse(ArchivePostResponse):

@@ -32,8 +32,8 @@ class ArchivePost(Document):
     # 여기서는 빠른 쿼리를 위해 답변 개수 등을 같이 들고 있을 수 있습니다.
     answer_count: int = 0
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
         name = "archive_posts"
@@ -48,7 +48,7 @@ class ArchiveAnswer(Document):
     trust_count: int = 0                        # "신뢰함" 받은 횟수
     voted_user_ids: list[str] = Field(default_factory=list)  # 중복 투표 방지를 위한 uid 목록
     
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
         name = "archive_answers"

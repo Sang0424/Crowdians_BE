@@ -54,11 +54,16 @@ async def get_archives(
     items = []
     for p in posts:
         u = user_dict.get(p.author_id)
+        char_type = "blanc"
+        if u and getattr(u, "character", None):
+            char_type = u.character.type
         author_resp = {
             "id": p.author_id,
             "nickname": u.nickname if u else "크라우디언",
             "trustCount": u.stats.trust if u else 0,
             "level": u.stats.level if u else 1,
+            "characterType": char_type,  # <--- 추가된 부분
+            "title": getattr(u, "title", "뉴비"),  # <--- (선택) 이전 칭호 기능 호환용
         }
         items.append(
             ArchivePostResponse(
@@ -70,7 +75,8 @@ async def get_archives(
                 bounty=p.bounty,
                 author=author_resp,
                 answerCount=p.answer_count,
-                createdAt=p.created_at,
+                createdAt=p.createdAt,
+                characterType=char_type, 
             )
         )
 
