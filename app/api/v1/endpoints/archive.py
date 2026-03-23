@@ -47,9 +47,18 @@ async def get_archives(
     posts, total_count = await get_archive_list(sort, skip=skip, limit=size, locale=locale)
     
     author_ids = list(set([p.author_id for p in posts]))
+    post_ids = [str(p.id) for p in posts]
     from beanie.operators import In
     users = await User.find(In(User.uid, author_ids)).to_list()
     user_dict = {u.uid: u for u in users}
+
+    # 북마크여부 조회
+    from app.models.quest import UserQuestBookmark
+    bookmarks = await UserQuestBookmark.find(
+        In(UserQuestBookmark.quest_id, post_ids),
+        UserQuestBookmark.user_id == current_user.uid
+    ).to_list()
+    bookmarked_ids = set([b.quest_id for b in bookmarks])
 
     items = []
     for p in posts:
@@ -62,8 +71,8 @@ async def get_archives(
             "nickname": u.nickname if u else "크라우디언",
             "trustCount": u.stats.trust if u else 0,
             "level": u.stats.level if u else 1,
-            "characterType": char_type,  # <--- 추가된 부분
-            "title": getattr(u, "title", "뉴비"),  # <--- (선택) 이전 칭호 기능 호환용
+            "characterType": char_type,
+            "title": getattr(u, "title", "뉴비"),
         }
         items.append(
             ArchivePostResponse(
@@ -77,6 +86,7 @@ async def get_archives(
                 answerCount=p.answer_count,
                 createdAt=p.createdAt,
                 characterType=char_type, 
+                isBookmarked=(str(p.id) in bookmarked_ids),
             )
         )
 

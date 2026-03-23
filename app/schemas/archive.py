@@ -47,6 +47,7 @@ class ArchivePostResponse(BaseModel):
     answerCount: int
     createdAt: datetime
     characterType: str
+    isBookmarked: bool = False
 
 
 class ArchivePostDetailResponse(ArchivePostResponse):
