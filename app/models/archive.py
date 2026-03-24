@@ -29,6 +29,9 @@ class ArchivePost(Document):
     author_id: str                              # 글 작성자 User uid
     locale: str = "ko"
     
+    tags: list[str] = Field(default_factory=list) # LLM 추출 태그
+    summary: str = ""                            # LLM 3줄 요약
+    
     # 답변들의 ID 목록 (ArchiveAnswer Document의 id)
     # 또는 역방향 참조를 위해 안 들고 있어도 무방합니다. (보통 RDBMS처럼)
     # 여기서는 빠른 쿼리를 위해 답변 개수 등을 같이 들고 있을 수 있습니다.

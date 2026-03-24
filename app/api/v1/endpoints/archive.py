@@ -1,6 +1,6 @@
 # app/api/v1/endpoints/archive.py
 
-from fastapi import APIRouter, Query, HTTPException, status
+from fastapi import APIRouter, Query, HTTPException, status, BackgroundTasks
 
 from app.core.security import CurrentUser
 from app.models.user import User
@@ -23,6 +23,7 @@ from app.services.archive_service import (
     toggle_trust_vote,
     toggle_bookmark,
     reject_commission,
+    update_post_tags_and_summary,
 )
 from app.core.exceptions import InsufficientResourceError, NotFoundError
 
@@ -86,6 +87,8 @@ async def get_archives(
                 characterType=char_type, 
                 isBookmarked=(str(p.id) in bookmarked_ids),
                 isDirectCommission=bool(p.target_user_id),
+                tags=p.tags,
+                summary=p.summary,
             )
         )
 
@@ -133,6 +136,7 @@ async def get_archive_detail(
 async def create_post(
     request: ArchivePostRequest,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     try:
         post_id = await create_archive_post(
@@ -144,6 +148,10 @@ async def create_post(
             target_user_id=request.targetUserId,
             locale=request.locale,
         )
+        
+        # LLM 태그 추출 및 요약 백그라운드 태스크 등록
+        background_tasks.add_task(update_post_tags_and_summary, post_id)
+        
         return ArchivePostSubmitResponse(
             success=True,
             postId=post_id,

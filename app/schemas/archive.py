@@ -52,6 +52,8 @@ class ArchivePostResponse(BaseModel):
     characterType: str
     isBookmarked: bool = False
     isDirectCommission: bool = False
+    tags: list[str] = []         # LLM 추출 태그
+    summary: Optional[str] = None # LLM 3줄 요약
 
 
 class ArchivePostDetailResponse(ArchivePostResponse):

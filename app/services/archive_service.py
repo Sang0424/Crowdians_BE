@@ -10,6 +10,7 @@ from app.models.academy import KnowledgeCard
 
 from app.db.repository.archive_repository import archive_repo, archive_answer_repo
 from app.services.mailbox_service import send_system_mail
+from app.core.llm import generate_tags_and_summary
 
 async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", bounty: int = 0, locale: str = "ko", target_user_id: str = None) -> str:
     """새로운 지식 도서관 질문을 등록합니다."""
@@ -56,6 +57,7 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
             choices=[],
             correct_answer="",
             bounty=bounty,
+            priority=100 if is_sos else 0, # SOS 게시글인 경우 우선순위 상향
             linked_post_id=str(post.id)
         )
         await card.insert()
@@ -63,18 +65,31 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
     return str(post.id)
 
 
+async def update_post_tags_and_summary(post_id: str):
+    """지정된 게시물의 태그와 요약을 LLM을 통해 생성하고 업데이트합니다."""
+    post = await ArchivePost.get(post_id)
+    if not post:
+        return
+        
+    result = await generate_tags_and_summary(post.content)
+    
+    post.tags = result.get("tags", [])
+    post.summary = result.get("summary", "")
+    await post.save()
+
+
 async def get_archive_list(sort: str, skip: int = 0, limit: int = 10, locale: str = "ko") -> tuple[list[ArchivePost], int]:
     """질문 목록을 페이지네이션으로 조회합니다. (posts, total_count) 반환."""
     # sort param (latest | popular | bounty | needed)
-    sort_query = []
+    # SOS 게시글 (is_sos = True) 최상단 노출
     if sort == "popular":
-        sort_query = [("answer_count", -1), ("createdAt", -1)]
+        sort_query = [("is_sos", -1), ("answer_count", -1), ("createdAt", -1)]
     elif sort == "bounty":  
-        sort_query = [("bounty", -1), ("createdAt", -1)]
+        sort_query = [("is_sos", -1), ("bounty", -1), ("createdAt", -1)]
     elif sort == "needed":
-        sort_query = [("answer_count", 1), ("createdAt", -1)]
+        sort_query = [("is_sos", -1), ("answer_count", 1), ("createdAt", -1)]
     else:
-        sort_query = [("createdAt", -1)]
+        sort_query = [("is_sos", -1), ("createdAt", -1)]
 
     query = archive_repo.model.find(archive_repo.model.locale == locale)
     total_count = await query.count()
@@ -177,6 +192,8 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
         "characterType": post_author_resp["characterType"],
         "isBookmarked": is_bookmarked,
         "isDirectCommission": bool(post.target_user_id),
+        "tags": post.tags,
+        "summary": post.summary,
         "answers": answer_responses,
     }
 
@@ -347,6 +364,7 @@ async def _promote_to_knowledge_card(answer: ArchiveAnswer):
         correct_answer=answer.content,
         bounty=10,
         trust_count=answer.trust_count,
+        priority=100 if post.is_sos else 0,
         source_message_id=str(answer.id)
     )
     await card.insert()
