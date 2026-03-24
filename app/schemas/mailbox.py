@@ -18,6 +18,7 @@ class MailResponse(BaseModel):
     title: str
     content: str
     isRead: bool
+    referenceId: Optional[str] = None
     reward: MailRewardResponse
     createdAt: datetime
     expiresAt: Optional[datetime]

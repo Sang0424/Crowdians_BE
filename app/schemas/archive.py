@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from pydantic import BaseModel, Field
+from typing import Optional
 
 
 # ── 답변 스키마 ──
@@ -45,9 +46,12 @@ class ArchivePostResponse(BaseModel):
     bounty: int
     author: AuthorResponse
     answerCount: int
+    targetUserId: Optional[str] = None
+    status: str = "open"
     createdAt: datetime
     characterType: str
     isBookmarked: bool = False
+    isDirectCommission: bool = False
 
 
 class ArchivePostDetailResponse(ArchivePostResponse):
@@ -60,7 +64,14 @@ class ArchivePostRequest(BaseModel):
     title: str = Field(..., description="질문 제목")
     content: str = Field(..., description="질문 내용")
     category: str = Field(default="general")
+    targetUserId: Optional[str] = Field(default=None, description="직접 의뢰할 대상의 UID")
     bounty: int = Field(default=0, description="걸고 싶은 골드 바운티")
+    locale: str = Field(default="ko", description="언어 설정")
+
+
+class ArchiveBookmarkResponse(BaseModel):
+    success: bool
+    isBookmarked: bool
 
 
 class PaginatedArchiveResponse(BaseModel):

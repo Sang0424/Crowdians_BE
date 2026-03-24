@@ -1,7 +1,7 @@
 # app/schemas/user.py
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel
 
@@ -58,44 +58,18 @@ class UserProfileResponse(BaseModel):
 
 # ── 유저 활동 탭 ──
 
-class ActivityAnswerItem(BaseModel):
-    """내가 작성한 답변"""
-    answerId: str
-    question: str
-    answerPreview: str
-    trustCount: int
+class ArchiveActivityItem(BaseModel):
+    id: str
+    type: str  # 'quest' | 'post' | 'comment'
+    title: str
+    status: str  # 'active' | 'complete' | 'failed' | 'open' | 'answered'
+    category: str
+    isSOS: bool
     createdAt: datetime
-
-
-class ActivityQuestionItem(BaseModel):
-    """내가 작성한 질문"""
-    questionId: str
-    question: str
-    answerCount: int
-    bounty: int
-    createdAt: datetime
-
-
-class ActivitySavedItem(BaseModel):
-    """저장한 항목"""
-    itemId: str
-    type: str           # "answer" | "question"
-    question: str
-    preview: str
-    createdAt: datetime
-
-
-class ActivityVotedItem(BaseModel):
-    """투표(신뢰함)한 항목"""
-    answerId: str
-    question: str
-    trustCount: int
-    createdAt: datetime
-
 
 class UserActivitiesResponse(BaseModel):
-    tab: str            # answered | asked | saved | voted
-    items: list         # 탭에 따라 다른 타입
+    tab: str
+    items: List[ArchiveActivityItem]
     total: int
     page: int
     limit: int
@@ -113,3 +87,7 @@ class DeleteAccountResponse(BaseModel):
 class CharacterTypeUpdateRequest(BaseModel):
     """캐릭터 타입 업데이트 요청"""
     type: str
+
+class NicknameUpdateRequest(BaseModel):
+    """닉네임 업데이트 요청"""
+    nickname: str

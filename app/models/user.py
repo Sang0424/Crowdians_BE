@@ -63,6 +63,7 @@ class User(Document):
     email: Optional[str] = None
     nickname: str 
     provider: str                     # google / discord / twitter
+    bookmarked_posts: list[str] = []
     title: str | None = None
 
     stats: UserStats = Field(default_factory=UserStats)

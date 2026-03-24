@@ -64,12 +64,47 @@ async def get_user_activities(
 ) -> dict:
     """
     유저 활동 목록을 탭별로 조회합니다.
-    현재는 빈 목록을 반환하며, 각 기능(아카데미, 지식 도서관) 구현 후 채워집니다.
     """
+    from app.services import archive_service
+    from app.db.repository.user_repository import UserRepository
+    
+    skip = (page - 1) * limit
+    posts = []
+    total = 0
+    
+    if tab == "all":
+        # 모든 활동을 가져와서 합친 후 정렬 (최신순)
+        asked, _ = await archive_service.get_user_asked_posts(uid, skip=0, limit=100)
+        answered, _ = await archive_service.get_user_answered_posts(uid, skip=0, limit=100)
+        voted, _ = await archive_service.get_user_voted_answers(uid, skip=0, limit=100)
+        
+        user_repo = UserRepository()
+        user = await user_repo.get_by_uid(uid)
+        saved = []
+        if user:
+            saved, _ = await archive_service.get_user_bookmarked_posts(user, skip=0, limit=100)
+            
+        all_items = asked + answered + voted + saved
+        # sort by createdAt descending
+        all_items.sort(key=lambda x: x.get("createdAt"), reverse=True)
+        total = len(all_items)
+        posts = all_items[skip:skip+limit]
+    elif tab == "asked":
+        posts, total = await archive_service.get_user_asked_posts(uid, skip=skip, limit=limit)
+    elif tab == "answered":
+        posts, total = await archive_service.get_user_answered_posts(uid, skip=skip, limit=limit)
+    elif tab == "saved":
+        user_repo = UserRepository()
+        user = await user_repo.get_by_uid(uid)
+        if user:
+            posts, total = await archive_service.get_user_bookmarked_posts(user, skip=skip, limit=limit)
+    elif tab == "voted":
+        posts, total = await archive_service.get_user_voted_answers(uid, skip=skip, limit=limit)
+        
     return {
         "tab": tab,
-        "items": [],
-        "total": 0,
+        "items": posts,
+        "total": total,
         "page": page,
         "limit": limit,
     }

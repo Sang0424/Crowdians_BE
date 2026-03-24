@@ -66,7 +66,7 @@ async def read_mail(user: User, mail_id: str) -> dict:
         "receivedRewards": received_rewards
     }
 
-async def send_system_mail(user_id: str, title: str, content: str, exp: int=0, gold: int=0, trust: int=0, stamina: int=0, mail_type: str="system"):
+async def send_system_mail(user_id: str, title: str, content: str, exp: int=0, gold: int=0, trust: int=0, stamina: int=0, mail_type: str="system", reference_id: str = None):
     """시스템 포트에 의해 유저에게 특별 우편을 발송하는 내부 유틸 API"""
     new_mail = Mail(
         user_id=user_id,
@@ -78,6 +78,7 @@ async def send_system_mail(user_id: str, title: str, content: str, exp: int=0, g
             "gold": gold,
             "trust": trust,
             "stamina": stamina
-        }
+        },
+        reference_id=reference_id
     )
     await new_mail.insert()

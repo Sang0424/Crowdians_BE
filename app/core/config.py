@@ -1,6 +1,6 @@
 # app/core/config.py
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -30,8 +30,7 @@ class Settings(BaseSettings):
         "http://localhost:3001",
     ]
 
-    class Config:
-        env_file = ".env.local"
+    model_config = SettingsConfigDict(env_file=".env.local", extra="allow")
 
 
 settings = Settings()

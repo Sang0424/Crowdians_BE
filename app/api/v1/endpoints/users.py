@@ -12,6 +12,7 @@ from app.schemas.user import (
     UserActivitiesResponse,
     DeleteAccountResponse,
     GuestStatsSyncRequest,
+    NicknameUpdateRequest,
     CharacterTypeUpdateRequest,
 )
 from app.services.user_service import (
@@ -259,6 +260,26 @@ async def update_character_type(
     current_user: CurrentUser,
 ):
     current_user.character.type = request.type
+    await current_user.save()
+    
+    return _user_to_profile(current_user)
+
+
+# ══════════════════════════════════════
+# PATCH /users/me/nickname — 닉네임 변경
+# ══════════════════════════════════════
+
+@router.patch(
+    "/users/me/nickname",
+    response_model=UserProfileResponse,
+    summary="닉네임 변경",
+    description="현재 로그인한 유저의 닉네임을 변경합니다.",
+)
+async def update_nickname(
+    request: NicknameUpdateRequest,
+    current_user: CurrentUser,
+):
+    current_user.nickname = request.nickname
     await current_user.save()
     
     return _user_to_profile(current_user)

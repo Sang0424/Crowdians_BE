@@ -39,13 +39,17 @@ async def create_quest(
 
 
 async def toggle_quest_bookmark(user: User, quest_id: str) -> bool:
-    """의뢰 북마크 토글"""
-    # 의뢰 존재 여부 확인
-    quest = await Quest.get(quest_id)
-    if not quest:
-        raise NotFoundError("의뢰")
+    """의뢰/게시글 북마크 토글"""
+    # 1. 대상 찾기 (Quest or ArchivePost)
+    target = await Quest.get(quest_id)
+    if not target:
+        from app.models.archive import ArchivePost
+        target = await ArchivePost.get(quest_id)
+        
+    if not target:
+        raise NotFoundError("의뢰/게시글")
 
-    # 북마크 존재 여부 확인
+    # 2. 북마크 존재 여부 확인
     bookmark = await UserQuestBookmark.find_one(
         UserQuestBookmark.user_id == user.uid,
         UserQuestBookmark.quest_id == quest_id
@@ -54,8 +58,9 @@ async def toggle_quest_bookmark(user: User, quest_id: str) -> bool:
     if bookmark:
         # 삭제
         await bookmark.delete()
-        quest.bookmark_count = max(0, quest.bookmark_count - 1)
-        await quest.save()
+        if hasattr(target, "bookmark_count"):
+            target.bookmark_count = max(0, target.bookmark_count - 1)
+            await target.save()
         return False
     else:
         # 생성
@@ -64,6 +69,7 @@ async def toggle_quest_bookmark(user: User, quest_id: str) -> bool:
             quest_id=quest_id
         )
         await new_bookmark.insert()
-        quest.bookmark_count += 1
-        await quest.save()
+        if hasattr(target, "bookmark_count"):
+            target.bookmark_count += 1
+            await target.save()
         return True

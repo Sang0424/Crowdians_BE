@@ -24,6 +24,8 @@ class ArchivePost(Document):
     is_sos: bool = False
     category: str = "general"
     bounty: int = 0
+    target_user_id: str | None = None            # 직접 의뢰 시 대상의 UID
+    status: str = "open"                        # 'open', 'commissioned', 'rejected', 'answered' 등
     author_id: str                              # 글 작성자 User uid
     locale: str = "ko"
     
@@ -31,6 +33,7 @@ class ArchivePost(Document):
     # 또는 역방향 참조를 위해 안 들고 있어도 무방합니다. (보통 RDBMS처럼)
     # 여기서는 빠른 쿼리를 위해 답변 개수 등을 같이 들고 있을 수 있습니다.
     answer_count: int = 0
+    bookmark_count: int = 0
 
     createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

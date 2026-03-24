@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from beanie import Document
 from pydantic import BaseModel, Field
+from typing import Optional
 
 
 class MailReward(BaseModel):
@@ -21,6 +22,7 @@ class Mail(Document):
     content: str                    # 우편 내용
     
     is_read: bool = False           # 읽음 & 보상 수령 여부
+    reference_id: Optional[str] = None  # 해당 우편이 연결된 ArchivePost의 ID
     reward: MailReward = Field(default_factory=MailReward)
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

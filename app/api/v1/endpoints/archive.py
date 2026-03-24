@@ -12,6 +12,7 @@ from app.schemas.archive import (
     ArchiveAnswerRequest,
     ArchiveAnswerSubmitResponse,
     TrustVoteResponse,
+    ArchiveBookmarkResponse,
     PaginatedArchiveResponse,
 )
 from app.services.archive_service import (
@@ -20,6 +21,8 @@ from app.services.archive_service import (
     get_archive_post_detail,
     submit_archive_answer,
     toggle_trust_vote,
+    toggle_bookmark,
+    reject_commission,
 )
 from app.core.exceptions import InsufficientResourceError, NotFoundError
 
@@ -53,12 +56,7 @@ async def get_archives(
     user_dict = {u.uid: u for u in users}
 
     # 북마크여부 조회
-    from app.models.quest import UserQuestBookmark
-    bookmarks = await UserQuestBookmark.find(
-        In(UserQuestBookmark.quest_id, post_ids),
-        UserQuestBookmark.user_id == current_user.uid
-    ).to_list()
-    bookmarked_ids = set([b.quest_id for b in bookmarks])
+    bookmarked_ids = set(current_user.bookmarked_posts or [])
 
     items = []
     for p in posts:
@@ -87,6 +85,7 @@ async def get_archives(
                 createdAt=p.createdAt,
                 characterType=char_type, 
                 isBookmarked=(str(p.id) in bookmarked_ids),
+                isDirectCommission=bool(p.target_user_id),
             )
         )
 
@@ -135,27 +134,26 @@ async def create_post(
     request: ArchivePostRequest,
     current_user: CurrentUser,
 ):
-    if request.bounty > 0 and current_user.stats.gold < request.bounty:
-        raise InsufficientResourceError("골드")
-        
     try:
-        if request.bounty > 0:
-            current_user.stats.gold -= request.bounty
-            from app.db.repository.user_repository import user_repo
-            await user_repo.update(db_obj=current_user, obj_in={"stats": current_user.stats})
-            
         post_id = await create_archive_post(
             current_user,
             title=request.title,
             content=request.content,
             category=request.category,
             bounty=request.bounty,
+            target_user_id=request.targetUserId,
             locale=request.locale,
         )
         return ArchivePostSubmitResponse(
             success=True,
             postId=post_id,
             message="질문이 지식 도서관에 성공적으로 등록되었습니다."
+        )
+    except ValueError as e:
+        if "골드" in str(e):
+            raise InsufficientResourceError("골드")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
         )
     except Exception as e:
         raise HTTPException(
@@ -215,3 +213,58 @@ async def vote_trust(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+# ══════════════════════════════════════
+# POST /archive/{id}/reject — 직접 의뢰 거절
+# ══════════════════════════════════════
+
+@router.post(
+    "/archive/{post_id}/reject",
+    response_model=ArchivePostSubmitResponse,
+    summary="직접 의뢰 질문 거절",
+    description="지정된 답변가(targetUserId)가 의뢰를 거절하고 바운티를 질문자에게 돌려줍니다.",
+)
+async def reject_post_commission(
+    post_id: str,
+    current_user: CurrentUser,
+):
+    try:
+        success = await reject_commission(current_user, post_id)
+        return ArchivePostSubmitResponse(
+            success=success,
+            postId=post_id,
+            message="의뢰가 거절되었습니다. 바운티가 질문자에게 반환되었습니다."
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
+
+
+# ══════════════════════════════════════
+# POST /archive/{post_id}/bookmark — 북마크 토글
+# ══════════════════════════════════════
+
+@router.post(
+    "/archive/{post_id}/bookmark",
+    response_model=ArchiveBookmarkResponse,
+    summary="아카이브 게시물 북마크 (저장) 토글",
+)
+async def bookmark_post(
+    post_id: str,
+    current_user: CurrentUser,
+):
+    try:
+        is_bookmarked = await toggle_bookmark(current_user.uid, post_id)
+        return ArchiveBookmarkResponse(
+            success=True,
+            isBookmarked=is_bookmarked
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

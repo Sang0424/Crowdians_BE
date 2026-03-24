@@ -13,6 +13,8 @@ from httpx import AsyncClient, ASGITransport
 from typing import AsyncGenerator
 import fakeredis.aioredis
 from unittest.mock import patch
+from beanie import init_beanie
+from mongomock_motor import AsyncMongoMockClient
 
 # Ensure asyncio loop scope is properly handled
 pytest_plugins = ('pytest_asyncio',)
@@ -24,20 +26,18 @@ def anyio_backend():
 # Setup DB explicitly
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_db():
-    import mongomock_motor
-    from beanie import init_beanie
+    client = AsyncMongoMockClient()
+    database = client["test_db"]
     
     from app.models.user import User
     from app.models.chat import ChatConversation
     from app.models.archive import ArchivePost, ArchiveAnswer
     from app.models.academy import KnowledgeCard
+    from app.models.mailbox import Mail
 
-    client = mongomock_motor.AsyncMongoMockClient()
-    database = client.get_database("test_db")
-    
     await init_beanie(
         database=database,
-        document_models=[User, ChatConversation, ArchivePost, ArchiveAnswer, KnowledgeCard],
+        document_models=[User, ChatConversation, ArchivePost, ArchiveAnswer, KnowledgeCard, Mail],
     )
     yield database
 
