@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from beanie import PydanticObjectId
+from fastapi import HTTPException, status
 
 from app.models.user import User
 from app.models.archive import ArchivePost, ArchiveAnswer
@@ -493,7 +494,10 @@ async def get_user_voted_answers(uid: str, skip: int = 0, limit: int = 20) -> tu
 
 # ── 1. 게시글 수정/삭제 ──
 async def update_archive_post(user_id: str, post_id: str, title: str, content: str) -> bool:
-    post = await ArchivePost.get(post_id)
+    try:
+        post = await ArchivePost.get(PydanticObjectId(post_id))
+    except Exception:
+        raise ValueError("유효하지 않은 게시글 ID입니다.")
     if not post:
         raise ValueError("게시글을 찾을 수 없습니다.")
     if post.author_id != user_id:
@@ -506,7 +510,10 @@ async def update_archive_post(user_id: str, post_id: str, title: str, content: s
     return True
 
 async def delete_archive_post(user_id: str, post_id: str) -> bool:
-    post = await ArchivePost.get(post_id)
+    try:
+        post = await ArchivePost.get(PydanticObjectId(post_id))
+    except Exception:
+        raise ValueError("유효하지 않은 게시글 ID입니다.")
     if not post:
         raise ValueError("게시글을 찾을 수 없습니다.")
     if post.author_id != user_id:
@@ -520,7 +527,10 @@ async def delete_archive_post(user_id: str, post_id: str) -> bool:
 
 # ── 2. 답변 수정/삭제 ──
 async def update_archive_answer(user_id: str, answer_id: str, content: str) -> bool:
-    answer = await ArchiveAnswer.get(answer_id)
+    try:
+        answer = await ArchiveAnswer.get(PydanticObjectId(answer_id))
+    except Exception:
+        raise ValueError("유효하지 않은 답변 ID입니다.")
     if not answer:
         raise ValueError("답변을 찾을 수 없습니다.")
     if answer.author_id != user_id:
@@ -531,7 +541,10 @@ async def update_archive_answer(user_id: str, answer_id: str, content: str) -> b
     return True
 
 async def delete_archive_answer(user_id: str, answer_id: str) -> bool:
-    answer = await ArchiveAnswer.get(answer_id)
+    try:
+        answer = await ArchiveAnswer.get(PydanticObjectId(answer_id))
+    except Exception:
+        raise ValueError("유효하지 않은 답변 ID입니다.")
     if not answer:
         raise ValueError("답변을 찾을 수 없습니다.")
     if answer.author_id != user_id:
@@ -541,7 +554,10 @@ async def delete_archive_answer(user_id: str, answer_id: str) -> bool:
     await answer.delete()
     
     # 부모 게시글의 답변 개수(answer_count) 1 감소
-    post = await ArchivePost.get(post_id)
+    try:
+        post = await ArchivePost.get(PydanticObjectId(post_id))
+    except Exception:
+        post = None
     if post:
         post.answer_count = max(0, post.answer_count - 1)
         await post.save()

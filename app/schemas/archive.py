@@ -91,8 +91,9 @@ class ArchivePostSubmitResponse(BaseModel):
     message: str
 
 class ArchiveUpdateRequest(BaseModel):
-    title: str = Field(..., description="수정할 제목 (게시글 전용)")
+    title: str | None = Field(default=None, description="수정할 제목 (게시글 전용, 답변 수정 시 생략 가능)")
     content: str = Field(..., description="수정할 내용")
+
 
 class BasicActionResponse(BaseModel):
     success: bool

@@ -26,6 +26,10 @@ from app.services.archive_service import (
     toggle_bookmark,
     reject_commission,
     update_post_tags_and_summary,
+    update_archive_post,
+    delete_archive_post,
+    update_archive_answer,
+    delete_archive_answer,
 )
 from app.core.exceptions import InsufficientResourceError, NotFoundError
 
