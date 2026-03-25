@@ -14,6 +14,8 @@ from app.schemas.archive import (
     TrustVoteResponse,
     ArchiveBookmarkResponse,
     PaginatedArchiveResponse,
+    ArchiveUpdateRequest,
+    BasicActionResponse,
 )
 from app.services.archive_service import (
     create_archive_post,
@@ -276,3 +278,32 @@ async def bookmark_post(
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+# ══════════════════════════════════════
+# PUT & DELETE /archive/{post_id} — 질문 글 수정/삭제
+# ══════════════════════════════════════
+@router.put("/archive/{post_id}", response_model=BasicActionResponse, summary="질문 글 수정")
+async def edit_post(post_id: str, request: ArchiveUpdateRequest, current_user: CurrentUser):
+    if not request.title:
+        raise HTTPException(status_code=400, detail="게시글 수정 시 제목이 필요합니다.")
+    await update_archive_post(current_user.uid, post_id, request.title, request.content)
+    return BasicActionResponse(success=True, message="게시글이 수정되었습니다.")
+
+@router.delete("/archive/{post_id}", response_model=BasicActionResponse, summary="질문 글 삭제")
+async def remove_post(post_id: str, current_user: CurrentUser):
+    await delete_archive_post(current_user.uid, post_id)
+    return BasicActionResponse(success=True, message="게시글이 삭제되었습니다.")
+
+
+# ══════════════════════════════════════
+# PUT & DELETE /archive/answers/{answer_id} — 답변 수정/삭제
+# ══════════════════════════════════════
+@router.put("/archive/answers/{answer_id}", response_model=BasicActionResponse, summary="답변 수정")
+async def edit_answer(answer_id: str, request: ArchiveUpdateRequest, current_user: CurrentUser):
+    await update_archive_answer(current_user.uid, answer_id, request.content)
+    return BasicActionResponse(success=True, message="답변이 수정되었습니다.")
+
+@router.delete("/archive/answers/{answer_id}", response_model=BasicActionResponse, summary="답변 삭제")
+async def remove_answer(answer_id: str, current_user: CurrentUser):
+    await delete_archive_answer(current_user.uid, answer_id)
+    return BasicActionResponse(success=True, message="답변이 삭제되었습니다.")

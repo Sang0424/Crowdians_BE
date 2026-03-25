@@ -490,3 +490,60 @@ async def get_user_voted_answers(uid: str, skip: int = 0, limit: int = 20) -> tu
             "createdAt": a.createdAt
         })
     return items, total
+
+# ── 1. 게시글 수정/삭제 ──
+async def update_archive_post(user_id: str, post_id: str, title: str, content: str) -> bool:
+    post = await ArchivePost.get(post_id)
+    if not post:
+        raise ValueError("게시글을 찾을 수 없습니다.")
+    if post.author_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="수정 권한이 없습니다.")
+    
+    post.title = title
+    post.content = content
+    post.updatedAt = datetime.now(timezone.utc)
+    await post.save()
+    return True
+
+async def delete_archive_post(user_id: str, post_id: str) -> bool:
+    post = await ArchivePost.get(post_id)
+    if not post:
+        raise ValueError("게시글을 찾을 수 없습니다.")
+    if post.author_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="삭제 권한이 없습니다.")
+    
+    # 게시글 삭제 시 하위 답변들도 함께 삭제 (Cascading)
+    await ArchiveAnswer.find(ArchiveAnswer.post_id == post_id).delete()
+    await post.delete()
+    return True
+
+
+# ── 2. 답변 수정/삭제 ──
+async def update_archive_answer(user_id: str, answer_id: str, content: str) -> bool:
+    answer = await ArchiveAnswer.get(answer_id)
+    if not answer:
+        raise ValueError("답변을 찾을 수 없습니다.")
+    if answer.author_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="수정 권한이 없습니다.")
+    
+    answer.content = content
+    await answer.save()
+    return True
+
+async def delete_archive_answer(user_id: str, answer_id: str) -> bool:
+    answer = await ArchiveAnswer.get(answer_id)
+    if not answer:
+        raise ValueError("답변을 찾을 수 없습니다.")
+    if answer.author_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="삭제 권한이 없습니다.")
+    
+    post_id = answer.post_id
+    await answer.delete()
+    
+    # 부모 게시글의 답변 개수(answer_count) 1 감소
+    post = await ArchivePost.get(post_id)
+    if post:
+        post.answer_count = max(0, post.answer_count - 1)
+        await post.save()
+        
+    return True

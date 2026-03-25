@@ -90,6 +90,14 @@ class ArchivePostSubmitResponse(BaseModel):
     postId: str
     message: str
 
+class ArchiveUpdateRequest(BaseModel):
+    title: str = Field(..., description="수정할 제목 (게시글 전용)")
+    content: str = Field(..., description="수정할 내용")
+
+class BasicActionResponse(BaseModel):
+    success: bool
+    message: str
+
 
 # ── 투표 스키마 ──
 

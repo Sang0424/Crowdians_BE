@@ -115,11 +115,11 @@ async def send_chat_message(
     my_safety_settings = [
         types.SafetySetting(
             category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
         ),
         types.SafetySetting(
             category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
         ),
         types.SafetySetting(
             category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
@@ -142,7 +142,11 @@ async def send_chat_message(
                 safety_settings=my_safety_settings,
             )
         )
-        ai_response_text = response.text
+        if not response.candidates or not response.candidates[0].content.parts:
+            # 안전 필터에 의해 텍스트가 생성되지 않은 경우
+            ai_response_text = "앗, 그 질문에는 대답하기가 조금 곤란해요. 다른 이야기를 해볼까요?"
+        else:
+            ai_response_text = response.text
     except Exception as e:
         raise RuntimeError(f"Gemini API 호출 중 오류가 발생했습니다: {str(e)}")
     
