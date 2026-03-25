@@ -38,6 +38,7 @@ async def list_mailbox(
                 title=m.title,
                 content=m.content,
                 isRead=m.is_read,
+                referenceId=m.reference_id,
                 reward=MailRewardResponse(
                     exp=m.reward.exp,
                     gold=m.reward.gold,

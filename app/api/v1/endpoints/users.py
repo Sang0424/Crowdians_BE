@@ -120,6 +120,7 @@ async def get_user_activities_endpoint(
     limit: int = Query(default=20, ge=1, le=100),
 ):
     user = await get_user_by_uid(uid)
+    
     if user is None:
         from app.core.exceptions import NotFoundError
         raise NotFoundError("User")

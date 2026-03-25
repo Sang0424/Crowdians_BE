@@ -66,6 +66,9 @@ class ArchiveActivityItem(BaseModel):
     category: str
     isSOS: bool
     createdAt: datetime
+    content: str
+    tags: list[str]
+    summary: str
 
 class UserActivitiesResponse(BaseModel):
     tab: str

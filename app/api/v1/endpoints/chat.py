@@ -1,6 +1,6 @@
 # app/api/v1/endpoints/chat.py
 
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status, BackgroundTasks
 
 from app.core.security import CurrentUser, get_current_user_optional, CurrentUser, CurrentUserOptional
 from app.models.chat import ChatConversation
@@ -23,7 +23,7 @@ from app.services.chat_service import (
     generate_summary_for_archive,
     send_guest_chat_message,
 )
-from app.services.archive_service import create_archive_post
+from app.services.archive_service import create_archive_post,update_post_tags_and_summary 
 from app.core.exceptions import InsufficientResourceError
 
 router = APIRouter()
@@ -172,6 +172,7 @@ async def delete_single_message(
 async def unlike_message(
     request: ChatUnlikeRequest,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     # Todo: Move to chat service completely? Currently fine as it composes two service calls.
     title, content = await generate_summary_for_archive(
@@ -180,7 +181,7 @@ async def unlike_message(
         is_sos=False
     )
     
-    await create_archive_post(
+    post_id = await create_archive_post(
         user=current_user,
         title=title,
         content=content,
@@ -188,6 +189,8 @@ async def unlike_message(
         bounty=0,
         is_sos=False
     )
+
+    background_tasks.add_task(update_post_tags_and_summary, post_id)
     
     return ChatUnlikeResponse(
         success=True,
@@ -208,6 +211,7 @@ async def unlike_message(
 async def request_sos(
     request: ChatSosRequest,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     if current_user.stats.gold < 30:
         raise InsufficientResourceError("골드")
@@ -223,7 +227,7 @@ async def request_sos(
     )
     
     # 지식 의뢰 데이터를 ArchivePost에 저장 (카테고리: sos)
-    await create_archive_post(
+    post_id = await create_archive_post(
         user=current_user,
         title=title,
         content=content,
@@ -231,6 +235,8 @@ async def request_sos(
         bounty=30,
         is_sos=True
     )
+
+    background_tasks.add_task(update_post_tags_and_summary, post_id)
     
     return ChatSosResponse(
         success=True,

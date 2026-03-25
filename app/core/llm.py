@@ -12,13 +12,13 @@ async def generate_tags_and_summary(content: str) -> dict:
     
     prompt = f"""
     Please analyze the following content and:
-    1. Summarize it in exactly 3 bullet points in Korean.
-    2. Extract 2-5 relevant tags in Korean.
+    1. Summarize it in exactly 3 bullet points.
+    2. Extract 2-5 relevant tags.
     
     Response MUST be in JSON format:
     {{
-        "summary": "1. 첫번째 요약\\n2. 두번째 요약\\n3. 세번째 요약",
-        "tags": ["태그1", "태그2"]
+        "summary": "1. first summary\n2. second summary\n3. third summary",
+        "tags": ["tag1", "tag2"]
     }}
     
     Content:
@@ -27,16 +27,37 @@ async def generate_tags_and_summary(content: str) -> dict:
     
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-3.1-flash-lite-preview",
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "summary": {
+                            "type": "STRING", 
+                            "description": "1. 첫번째 요약\n2. 두번째 요약\n3. 세번째 요약"
+                        },
+                        "tags": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"}
+                        }
+                    },
+                    "required": ["summary", "tags"]
+                }
             }
         )
         
         # JSON 파싱
         # response.text is the JSON string
-        return json.loads(response.text)
+
+        raw_text = response.text.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:-3].strip()
+        elif raw_text.startswith("```"):
+            raw_text = raw_text[3:-3].strip()
+            
+        return json.loads(raw_text)
     except Exception as e:
         print(f"LLM Error: {e}")
         return {

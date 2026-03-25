@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Optional
 
 
 class MailRewardResponse(BaseModel):
@@ -18,10 +17,10 @@ class MailResponse(BaseModel):
     title: str
     content: str
     isRead: bool
-    referenceId: Optional[str] = None
+    referenceId: str | None = None
     reward: MailRewardResponse
     createdAt: datetime
-    expiresAt: Optional[datetime]
+    expiresAt: datetime | None
 
 
 class MailboxListResponse(BaseModel):

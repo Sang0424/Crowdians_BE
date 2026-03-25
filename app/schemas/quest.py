@@ -10,6 +10,7 @@ class QuestCreate(BaseModel):
     tags: list[str] = Field(default_factory=list, description="태그 목록")
     reward: int = Field(default=0, description="보상 골드")
     is_sos: bool = Field(default=False, description="SOS 여부")
+    targetUserId: str | None = Field(default=None, description="직접 의뢰 대상 유저의 UID")
 
 
 class QuestAuthorResponse(BaseModel):
@@ -42,4 +43,12 @@ class QuestBookmarkToggleResponse(BaseModel):
 class QuestCreateResponse(BaseModel):
     success: bool
     questId: str
+    message: str
+
+class QuestAnswerRequest(BaseModel):
+    questId: str = Field(..., description="원본 퀘스트(의뢰) ID")
+    content: str = Field(..., description="답변 내용")
+
+class QuestAnswerResponse(BaseModel):
+    success: bool
     message: str

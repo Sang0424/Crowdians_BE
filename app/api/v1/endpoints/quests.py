@@ -7,8 +7,11 @@ from app.schemas.quest import (
     QuestCreateResponse,
     QuestBookmarkToggleResponse
 )
-from app.services.quest_service import create_quest, toggle_quest_bookmark
+from app.services.quest_service import create_quest
 from app.core.exceptions import DomainError
+
+from app.schemas.quest import QuestAnswerRequest, QuestAnswerResponse
+from app.services.quest_service import answer_quest
 
 router = APIRouter()
 
@@ -30,7 +33,8 @@ async def post_quest(
             description=request.description,
             tags=request.tags,
             reward=request.reward,
-            is_sos=request.is_sos
+            is_sos=request.is_sos,
+            target_user_id=request.targetUserId
         )
         return QuestCreateResponse(
             success=True,
@@ -46,22 +50,46 @@ async def post_quest(
         )
 
 
+# @router.post(
+#     "/{quest_id}/bookmark",
+#     response_model=QuestBookmarkToggleResponse,
+#     summary="의뢰 북마크 토글"
+# )
+# async def toggle_bookmark(
+#     quest_id: str,
+#     current_user: CurrentUser
+# ):
+#     try:
+#         is_bookmarked = await toggle_quest_bookmark(current_user, quest_id)
+#         return QuestBookmarkToggleResponse(
+#             success=True,
+#             isBookmarked=is_bookmarked,
+#             message="북마크 상태가 전환되었습니다."
+#         )
+#     except DomainError as e:
+#         raise HTTPException(status_code=e.status_code, detail=e.message)
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=str(e)
+#         )
+
 @router.post(
-    "/{quest_id}/bookmark",
-    response_model=QuestBookmarkToggleResponse,
-    summary="의뢰 북마크 토글"
+    "/answer",
+    response_model=QuestAnswerResponse,
+    summary="의뢰(퀘스트) 답변하기"
 )
-async def toggle_bookmark(
-    quest_id: str,
+async def post_quest_answer(
+    request: QuestAnswerRequest,
     current_user: CurrentUser
 ):
     try:
-        is_bookmarked = await toggle_quest_bookmark(current_user, quest_id)
-        return QuestBookmarkToggleResponse(
-            success=True,
-            isBookmarked=is_bookmarked,
-            message="북마크 상태가 전환되었습니다."
+        await answer_quest(
+            user=current_user,
+            quest_id=request.questId,
+            content=request.content
         )
+        return QuestAnswerResponse(success=True, message="답변이 성공적으로 전송되었습니다.")
     except DomainError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:

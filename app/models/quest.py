@@ -15,7 +15,7 @@ class Quest(Document):
     reward: int = 0
     is_sos: bool = False
     author_id: str                              # 글 작성자 User uid
-    
+    target_user_id: str | None = None        # 직접 의뢰 대상 User uid
     answer_count: int = 0
     bookmark_count: int = 0
 

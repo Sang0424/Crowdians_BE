@@ -12,6 +12,7 @@ from app.db.repository.archive_repository import archive_repo, archive_answer_re
 from app.services.mailbox_service import send_system_mail
 from app.core.llm import generate_tags_and_summary
 
+
 async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", bounty: int = 0, locale: str = "ko", target_user_id: str = None) -> str:
     """새로운 지식 도서관 질문을 등록합니다."""
     # 바운티(Bounty) 차감
@@ -67,15 +68,27 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
 
 async def update_post_tags_and_summary(post_id: str):
     """지정된 게시물의 태그와 요약을 LLM을 통해 생성하고 업데이트합니다."""
-    post = await ArchivePost.get(post_id)
+    print(f"🔥 [Background Task 시작] post_id: {post_id}")
+    try:
+        # String 형태의 ID를 MongoDB ObjectID 객체로 변환하여 조회 안정성 확보
+        oid = PydanticObjectId(post_id)
+        post = await ArchivePost.get(oid)
+    except Exception:
+        # PydanticObjectId 변환 실패 시 일반 get 폴백
+        print(f"❌ [DB 오류] ObjectID 변환 또는 조회 실패: {e}")
+        post = await ArchivePost.get(post_id)
     if not post:
+        print(f"❌ [DB 오류] 게시글을 찾을 수 없습니다: {post_id}")
         return
+
+    print(f"✅ [DB 조회 성공] 글 내용 일부: {post.content[:20]}... LLM 호출 시작")
         
     result = await generate_tags_and_summary(post.content)
     
     post.tags = result.get("tags", [])
     post.summary = result.get("summary", "")
     await post.save()
+    print(f"✅ [DB 저장 완료] 태그: {post.tags}, 요약: {post.summary}")
 
 
 async def get_archive_list(sort: str, skip: int = 0, limit: int = 10, locale: str = "ko") -> tuple[list[ArchivePost], int]:
@@ -382,6 +395,9 @@ async def get_user_asked_posts(uid: str, skip: int = 0, limit: int = 20) -> tupl
             "id": str(p.id),
             "type": "quest" if (p.is_sos or p.bounty > 0) else "post",
             "title": p.title,
+            "content": p.content,      # 내용 추가
+            "tags": p.tags,               # 태그 추가
+            "summary": p.summary,         # 요약 추가
             "status": p.status,
             "category": p.category,
             "isSOS": p.is_sos,
@@ -403,6 +419,9 @@ async def get_user_answered_posts(uid: str, skip: int = 0, limit: int = 20) -> t
             "id": str(post.id) if post else str(a.id),
             "type": "comment",
             "title": post.title if post else "삭제된 질문",
+            "content": post.content if post else "",
+            "tags": post.tags if post else [],
+            "summary": post.summary if post else "",
             "status": post.status if post else "unknown",
             "category": post.category if post else "unknown",
             "isSOS": post.is_sos if post else False,
@@ -439,6 +458,9 @@ async def get_user_bookmarked_posts(user: User, skip: int = 0, limit: int = 20) 
             "id": str(p.id),
             "type": "post",
             "title": p.title,
+            "content": p.content,
+            "tags": p.tags,
+            "summary": p.summary,
             "status": p.status,
             "category": p.category,
             "isSOS": p.is_sos,
@@ -459,6 +481,9 @@ async def get_user_voted_answers(uid: str, skip: int = 0, limit: int = 20) -> tu
             "id": str(post.id) if post else str(a.id),
             "type": "comment",
             "title": post.title if post else "삭제된 질문",
+            "content": post.content if post else "",
+            "tags": post.tags if post else [],
+            "summary": post.summary if post else "",
             "status": post.status if post else "unknown",
             "category": post.category if post else "unknown",
             "isSOS": post.is_sos if post else False,

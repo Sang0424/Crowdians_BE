@@ -1,7 +1,7 @@
 # app/services/mailbox_service.py
 
 from datetime import datetime, timezone
-from bson import ObjectId
+from beanie import PydanticObjectId
 
 from app.models.user import User
 from app.models.mailbox import Mail
@@ -18,7 +18,7 @@ async def get_user_mails(user_id: str, skip: int = 0, limit: int = 20) -> tuple[
 async def read_mail(user: User, mail_id: str) -> dict:
     """메일을 읽음 처리하고, 보상이 있다면 유저 스탯에 반영합니다."""
     try:
-        mail = await Mail.get(ObjectId(mail_id))
+        mail = await Mail.get(PydanticObjectId(mail_id))
     except Exception:
         raise ValueError("유효하지 않은 메일 ID입니다.")
         
