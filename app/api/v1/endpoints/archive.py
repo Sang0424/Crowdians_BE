@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Query, HTTPException, status, BackgroundTasks
 
-from app.core.security import CurrentUser
+from app.core.security import CurrentUser, CurrentUserOptional
 from app.models.user import User
 from app.schemas.archive import (
     ArchivePostResponse,
@@ -47,7 +47,7 @@ router = APIRouter()
     description="최신(latest), 인기(popular), 바운티(bounty), 답변대기(needed) 순 정렬 지원. page/size로 페이지네이션.",
 )
 async def get_archives(
-    current_user: CurrentUser,
+    current_user: CurrentUserOptional,
     sort: str = Query("latest", pattern="^(latest|popular|bounty|needed)$"),
     page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
     size: int = Query(10, ge=1, le=50, description="페이지당 아이템 수"),
@@ -57,13 +57,13 @@ async def get_archives(
     posts, total_count = await get_archive_list(sort, skip=skip, limit=size, locale=locale)
     
     author_ids = list(set([p.author_id for p in posts]))
-    post_ids = [str(p.id) for p in posts]
+    # post_ids = [str(p.id) for p in posts]
     from beanie.operators import In
     users = await User.find(In(User.uid, author_ids)).to_list()
     user_dict = {u.uid: u for u in users}
 
     # 북마크여부 조회
-    bookmarked_ids = set(current_user.bookmarked_posts or [])
+    bookmarked_ids = set(current_user.bookmarked_posts or []) if current_user else set()
 
     items = []
     for p in posts:
@@ -120,10 +120,11 @@ async def get_archives(
 )
 async def get_archive_detail(
     post_id: str,
-    current_user: CurrentUser,
+    current_user: CurrentUserOptional,
 ):
     try:
-        detail_dict = await get_archive_post_detail(post_id, current_user.uid)
+        user_uid = current_user.uid if current_user else ""
+        detail_dict = await get_archive_post_detail(post_id, user_uid)
         return ArchivePostDetailResponse(**detail_dict)
     except ValueError as e:
         raise NotFoundError("게시글")

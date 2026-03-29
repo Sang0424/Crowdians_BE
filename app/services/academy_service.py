@@ -15,15 +15,15 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
         await user.save()
         
     # 2. 사실상 프론트엔드에서 ticketIndex로 페이지네이션/요청을 구분합니다.
-    # 기획상 5장의 문제를 내려줘야 하므로 임시 목업/샘플 데이터를 반환하거나
-    # 랜덤으로 5개를 조회하여 넘겨줍니다.
     
-    # DB에 카드가 없는 경우 임시 데이터 (나중에 삭제 가능)
+    # DB에 카드가 없는 경우 임시 데이터
     count = await KnowledgeCard.count()
     if count == 0:
         sample_cards = [
             KnowledgeCard(type="vote", question="다음 중 파이썬의 프레임워크는?", choices=["Spring", "FastAPI"], correct_answer=1, bounty=10),
             KnowledgeCard(type="vote", question="Pico는 어떤 성격일까?", choices=["시니컬하다", "다정하고 호기심많다"], correct_answer=1, bounty=15),
+            KnowledgeCard(type="question", question="오늘의 날씨는?", correct_answer="맑음", bounty=20),
+            KnowledgeCard(type="quiz", question="2 + 2 = ?", correct_answer=4, bounty=25),
         ]
         await KnowledgeCard.insert_many(sample_cards)
         
