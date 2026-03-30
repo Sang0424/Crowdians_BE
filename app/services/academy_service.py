@@ -92,9 +92,9 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
     trust_gained = 0
     
     if is_correct:
-        exp_gained = 5      # 퀴즈 정답 EXP (고정)
-        gold_gained = 10    # 퀴즈 정답 Gold (고정)
-        trust_gained = 1    # 신뢰도 상승 (고정)
+        exp_gained = 10      # 퀴즈 정답 EXP (고정)
+        gold_gained = 5     # 퀴즈 정답 Gold (고정)
+        trust_gained = 1     # 신뢰도 상승 (고정)
         
         user.stats.exp += exp_gained
         user.stats.gold += gold_gained
@@ -164,21 +164,4 @@ async def reject_card_answer(user: User, card_id: str) -> dict:
         "message": "답변을 모두 거절(Reject)했습니다. 데이터셋 개선에 반영됩니다."
     }
 
-async def recharge_ticket(user: User) -> dict:
-    """하루 최대 5번 광고 시청 후 티켓을 1장 충전합니다."""
-    if check_daily_reset(user):
-        await user.save()
-        
-    if user.stats.ticket_recharges_today >= 5:
-        raise ValueError("하루 최대 티켓 충전 횟수(5회)를 초과했습니다.")
-        
-    user.stats.learning_tickets += 1
-    user.stats.ticket_recharges_today += 1
-    await user.save()
-    
-    return {
-        "success": True,
-        "ticketsRemaining": user.stats.learning_tickets,
-        "rechargesToday": user.stats.ticket_recharges_today,
-        "message": "티켓이 1장 충전되었습니다."
-    }
+

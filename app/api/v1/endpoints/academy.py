@@ -16,7 +16,6 @@ from app.services.academy_service import (
     get_daily_cards,
     submit_card_answer,
     reject_card_answer,
-    recharge_ticket,
 )
 
 router = APIRouter()
@@ -102,29 +101,6 @@ async def reject_card(
     try:
         result = await reject_card_answer(current_user, card_id)
         return CardRejectResponse(**result)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
-
-
-# ══════════════════════════════════════
-# POST /academy/tickets/recharge — 광고 시청으로 티켓 충전
-# ══════════════════════════════════════
-
-@router.post(
-    "/academy/tickets/recharge",
-    response_model=TicketRechargeResponse,
-    summary="아카데미 티켓 광고 충전",
-    description="티켓을 다 소진한 후 광고를 보고 추가로 충전합니다. (하루 최대 5번)",
-)
-async def recharge_academy_ticket(
-    current_user: CurrentUser,
-):
-    try:
-        result = await recharge_ticket(current_user)
-        return TicketRechargeResponse(**result)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -162,12 +162,21 @@ async def send_chat_message(
     # 4. 유저 스탯 갱신
     user.stats.stamina -= 1
     
+    # --- 보상 계산 ---
+    # 4-1. 경험치 (EXP)
     exp_gained = 0
     if user.stats.daily_chat_exp < 50:
         exp_gain = min(2, 50 - user.stats.daily_chat_exp)
         user.stats.exp += exp_gain
         user.stats.daily_chat_exp += exp_gain
         exp_gained = exp_gain
+    
+    # 4-2. 골드 (Gold) - 3% 확률로 1~3 Gold 발견 (이스터에그)
+    gold_gained = 0
+    import random
+    if random.random() < 0.03:
+        gold_gained = random.randint(1, 3)
+        user.stats.gold += gold_gained
         
     # user.stats.intimacy += 1 (지시: 채팅 시 친밀도 상승 제거)
     
@@ -191,6 +200,7 @@ async def send_chat_message(
             "createdAt": ai_msg.createdAt
         },
         "expGained": exp_gained,
+        "goldGained": gold_gained,  # 추가된 필드
         "staminaConsumed": 1,
         "intimacyGained": 0,
     }

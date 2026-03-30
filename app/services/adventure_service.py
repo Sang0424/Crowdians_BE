@@ -141,9 +141,9 @@ async def start_adventure(user: User, use_buff: bool = False) -> AdventureSessio
     if check_daily_reset(user):
         await user.save()
 
-    # 스태미나 소모
-    if user.stats.stamina < 1:
-        raise ValueError("모험을 시작하기 위한 스태미나가 부족합니다. (1 필요)")
+    # 스태미나 소모 (5 소모로 상향)
+    if user.stats.stamina < 5:
+        raise ValueError("모험을 시작하기 위한 스태미나가 부족합니다. (5 필요)")
 
     # 버프 사용 시 100G 차감
     if use_buff:
@@ -154,7 +154,7 @@ async def start_adventure(user: User, use_buff: bool = False) -> AdventureSessio
     else:
         start_hp = 100
 
-    user.stats.stamina -= 1
+    user.stats.stamina -= 5
     await user.save()
 
     # 1층 노드 생성
@@ -214,9 +214,9 @@ async def select_adventure_node(user: User, session_id: str, choice_id: str) -> 
     msg = ""
 
     if is_success:
-        reward_exp = random.randint(1, 3)
-        reward_gold = random.randint(10, 30)
-        msg = f"위기를 극복했습니다! (EXP +{reward_exp}, Gold +{reward_gold})"
+        reward_exp = 0
+        reward_gold = 20
+        msg = f"위기를 극복했습니다! (Gold +{reward_gold})"
     else:
         hp_lost = selected_choice.hp_penalty_on_fail
         msg = f"선택에 실패하여 체력을 {hp_lost}만큼 잃었습니다."
@@ -286,11 +286,12 @@ async def continue_adventure(user: User, session_id: str) -> dict:
         session.updated_at = datetime.now(timezone.utc)
         await session.save()
 
-        # 클리어 추가 보상
-        reward_tickets = random.randint(1, 2)
-        courage_gained = session.max_depth  # 진행 층수(10) 비례
+        # 클리어 추가 보상 (확정 보상)
+        reward_tickets = 1
+        courage_gained = 1
+        reward_gold = 20
 
-        user.stats.gold += 100
+        user.stats.gold += reward_gold
         user.stats.learning_tickets += reward_tickets
         user.stats.courage += courage_gained
         await user.save()
@@ -299,7 +300,7 @@ async def continue_adventure(user: User, session_id: str) -> dict:
             "success": True,
             "nextNode": None,
             "status": "complete",
-            "message": "축하합니다! 모험을 무사히 완료했습니다. 특별 클리어 보상을 지급합니다.",
+            "message": "축하합니다! 모험을 무사히 완료했습니다. (Ticket +1, Gold +20)",
             "rewardTickets": reward_tickets,
             "courageGained": courage_gained,
         }
