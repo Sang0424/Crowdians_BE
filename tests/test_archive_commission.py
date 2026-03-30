@@ -29,7 +29,6 @@ async def test_direct_commission_flow(setup_db):
         title="Direct Question",
         content="Please answer this",
         target_user_id="user2_uid",
-        bounty=100,
         locale="ko"
     )
     
@@ -38,11 +37,10 @@ async def test_direct_commission_flow(setup_db):
     assert post is not None
     assert post.target_user_id == "user2_uid"
     assert post.status == "commissioned"
-    assert post.bounty == 100
     
-    # Verify bounty deduction (manually check since create_archive_post might not update the input user object in-place or repo)
+    # Verify no bounty deduction (manually check)
     updated_user1 = await User.find_one(User.uid == "user1_uid")
-    assert updated_user1.stats.gold == 900
+    assert updated_user1.stats.gold == 1000
     
     # Verify mailbox message
     message = await Mail.find_one(Mail.user_id == "user2_uid")
@@ -58,6 +56,6 @@ async def test_direct_commission_flow(setup_db):
     post = await ArchivePost.get(post_id)
     assert post.status == "rejected"
     
-    # Verify bounty refund to user1
+    # Verify no bounty refund to user1 since it was free
     updated_user1 = await User.find_one(User.uid == "user1_uid")
     assert updated_user1.stats.gold == 1000

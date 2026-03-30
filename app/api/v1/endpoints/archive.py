@@ -44,11 +44,11 @@ router = APIRouter()
     "/archive",
     response_model=PaginatedArchiveResponse,
     summary="지식 도서관(Archive) 게시글 목록 (페이지네이션)",
-    description="최신(latest), 인기(popular), 바운티(bounty), 답변대기(needed) 순 정렬 지원. page/size로 페이지네이션.",
+    description="최신(latest), 인기(popular), 답변대기(needed) 순 정렬 지원. page/size로 페이지네이션.",
 )
 async def get_archives(
     current_user: CurrentUserOptional,
-    sort: str = Query("latest", pattern="^(latest|popular|bounty|needed)$"),
+    sort: str = Query("latest", pattern="^(latest|popular|needed)$"),
     page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
     size: int = Query(10, ge=1, le=50, description="페이지당 아이템 수"),
     locale: str = Query("ko", description="언어 설정"),
@@ -86,7 +86,6 @@ async def get_archives(
                 content=p.content,
                 isSos=p.is_sos,
                 category=p.category,
-                bounty=p.bounty,
                 author=author_resp,
                 answerCount=p.answer_count,
                 createdAt=p.createdAt,
@@ -151,7 +150,6 @@ async def create_post(
             title=request.title,
             content=request.content,
             category=request.category,
-            bounty=request.bounty,
             target_user_id=request.targetUserId,
             locale=request.locale,
         )
@@ -249,7 +247,7 @@ async def reject_post_commission(
         return ArchivePostSubmitResponse(
             success=success,
             postId=post_id,
-            message="의뢰가 거절되었습니다. 바운티가 질문자에게 반환되었습니다."
+            message="의뢰가 거절되었습니다."
         )
     except ValueError as e:
         raise HTTPException(

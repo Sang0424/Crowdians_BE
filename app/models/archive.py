@@ -23,7 +23,6 @@ class ArchivePost(Document):
     content: str
     is_sos: bool = False
     category: str = "general"
-    bounty: int = 0
     target_user_id: str | None = None            # 직접 의뢰 시 대상의 UID
     status: str = "open"                        # 'open', 'commissioned', 'rejected', 'answered' 등
     author_id: str                              # 글 작성자 User uid

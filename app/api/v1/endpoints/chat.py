@@ -186,7 +186,6 @@ async def unlike_message(
         title=title,
         content=content,
         category="qna",
-        bounty=0,
         is_sos=False
     )
 
@@ -213,12 +212,7 @@ async def request_sos(
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
 ):
-    if current_user.stats.gold < 30:
-        raise InsufficientResourceError("골드")
-    
-    from app.db.repository.user_repository import user_repo
-    current_user.stats.gold -= 30
-    await user_repo.update(db_obj=current_user, obj_in={"stats": current_user.stats})
+    # SOS 요청은 이제 무료입니다 (데이터 수집 장려)
     
     title, content = await generate_summary_for_archive(
         uid=current_user.uid,
@@ -232,7 +226,6 @@ async def request_sos(
         title=title,
         content=content,
         category="sos",
-        bounty=30,
         is_sos=True
     )
 
@@ -240,6 +233,6 @@ async def request_sos(
     
     return ChatSosResponse(
         success=True,
-        goldConsumed=30,
-        message="지식 의뢰가 성공적으로 접수되었습니다. (30G 차감)",
+        goldConsumed=0,
+        message="지식 의뢰가 성공적으로 접수되었습니다.",
     )

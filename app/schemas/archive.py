@@ -43,7 +43,6 @@ class ArchivePostResponse(BaseModel):
     content: str
     isSos: bool
     category: str
-    bounty: int
     author: AuthorResponse
     answerCount: int
     targetUserId: Optional[str] = None
@@ -67,7 +66,6 @@ class ArchivePostRequest(BaseModel):
     content: str = Field(..., description="질문 내용")
     category: str = Field(default="general")
     targetUserId: Optional[str] = Field(default=None, description="직접 의뢰할 대상의 UID")
-    bounty: int = Field(default=0, description="걸고 싶은 골드 바운티")
     locale: str = Field(default="ko", description="언어 설정")
 
 

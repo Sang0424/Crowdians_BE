@@ -20,10 +20,10 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
     count = await KnowledgeCard.count()
     if count == 0:
         sample_cards = [
-            KnowledgeCard(type="vote", question="다음 중 파이썬의 프레임워크는?", choices=["Spring", "FastAPI"], correct_answer=1, bounty=10),
-            KnowledgeCard(type="vote", question="Pico는 어떤 성격일까?", choices=["시니컬하다", "다정하고 호기심많다"], correct_answer=1, bounty=15),
-            KnowledgeCard(type="question", question="오늘의 날씨는?", correct_answer="맑음", bounty=20),
-            KnowledgeCard(type="quiz", question="2 + 2 = ?", correct_answer=4, bounty=25),
+            KnowledgeCard(type="vote", question="다음 중 파이썬의 프레임워크는?", choices=["Spring", "FastAPI"], correct_answer=1),
+            KnowledgeCard(type="vote", question="Pico는 어떤 성격일까?", choices=["시니컬하다", "다정하고 호기심많다"], correct_answer=1),
+            KnowledgeCard(type="question", question="오늘의 날씨는?", correct_answer="맑음"),
+            KnowledgeCard(type="quiz", question="2 + 2 = ?", correct_answer=4),
         ]
         await KnowledgeCard.insert_many(sample_cards)
         
@@ -37,7 +37,6 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
             "question": c.question,
             "content": c.content,
             "choices": c.choices,
-            "bounty": c.bounty,
         }
         for c in cards
     ]
@@ -93,9 +92,9 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
     trust_gained = 0
     
     if is_correct:
-        exp_gained = 5      # 퀴즈 정답 EXP
-        gold_gained = card.bounty
-        trust_gained = 1    # 신뢰도 상승
+        exp_gained = 5      # 퀴즈 정답 EXP (고정)
+        gold_gained = 10    # 퀴즈 정답 Gold (고정)
+        trust_gained = 1    # 신뢰도 상승 (고정)
         
         user.stats.exp += exp_gained
         user.stats.gold += gold_gained

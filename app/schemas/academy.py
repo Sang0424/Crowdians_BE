@@ -12,7 +12,6 @@ class KnowledgeCardResponse(BaseModel):
     question: str
     content: str | None = None
     choices: list[str]
-    bounty: int
 
 
 class CardSubmitRequest(BaseModel):

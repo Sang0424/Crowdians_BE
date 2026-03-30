@@ -14,17 +14,8 @@ from app.services.mailbox_service import send_system_mail
 from app.core.llm import generate_tags_and_summary
 
 
-async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", bounty: int = 0, locale: str = "ko", target_user_id: str = None) -> str:
+async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", locale: str = "ko", target_user_id: str = None) -> str:
     """새로운 지식 도서관 질문을 등록합니다."""
-    # 바운티(Bounty) 차감
-    if bounty > 0:
-        if user.stats.gold < bounty:
-            raise ValueError("골드가 부족합니다.")
-        
-        user.stats.gold -= bounty
-        from app.db.repository.user_repository import user_repo
-        await user_repo.update(db_obj=user, obj_in={"stats": user.stats})
-
     # 직접 의뢰(Direct Commission)인 경우 상태를 'commissioned'로 설정
     status = "commissioned" if target_user_id else "open"
     
@@ -33,7 +24,6 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
         "content": content,
         "is_sos": is_sos,
         "category": category,
-        "bounty": bounty,
         "author_id": user.uid,
         "locale": locale,
         "character_type": user.character.type if user.character else "unknown",
@@ -59,7 +49,6 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
             content=content,
             choices=[],
             correct_answer="",
-            bounty=bounty,
             priority=100 if is_sos else 0, # SOS 게시글인 경우 우선순위 상향
             linked_post_id=str(post.id)
         )
@@ -95,12 +84,10 @@ async def update_post_tags_and_summary(post_id: str):
 
 async def get_archive_list(sort: str, skip: int = 0, limit: int = 10, locale: str = "ko") -> tuple[list[ArchivePost], int]:
     """질문 목록을 페이지네이션으로 조회합니다. (posts, total_count) 반환."""
-    # sort param (latest | popular | bounty | needed)
+    # sort param (latest | popular | needed)
     # SOS 게시글 (is_sos = True) 최상단 노출
     if sort == "popular":
         sort_query = [("is_sos", -1), ("answer_count", -1), ("createdAt", -1)]
-    elif sort == "bounty":  
-        sort_query = [("is_sos", -1), ("bounty", -1), ("createdAt", -1)]
     elif sort == "needed":
         sort_query = [("is_sos", -1), ("answer_count", 1), ("createdAt", -1)]
     else:
@@ -198,7 +185,6 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
         "content": post.content,
         "isSos": post.is_sos,
         "category": post.category,
-        "bounty": post.bounty,
         "author": post_author_resp,
         "answerCount": post.answer_count,
         "targetUserId": post.target_user_id,
@@ -240,15 +226,21 @@ async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
     post.answer_count += 1
     post.updatedAt = datetime.now(timezone.utc)
     
-    # 직접 의뢰 지정 전문가가 답변한 경우 상태 업데이트 및 보상
+    # 1. 기본 보상 (EXP +10, Trust +2)
+    user.stats.exp += 10
+    user.stats.trust += 2
+    
+    # 2. 직접 의뢰 지정 전문가가 답변한 경우 상태 업데이트 및 보상 고정 지급
     if is_commissioned_expert and post.status == "commissioned":
         post.status = "answered"
-        # 추가 보상 (Bonus Gold/Exp): 예를 들어 바운티의 50%를 보너스로 지급
-        bonus_gold = int(post.bounty * 0.5)
-        bonus_exp = 100 # 고정 보너스 경험치
+        # 추가 보상 (고정 보너스 Gold/Exp/Trust)
+        bonus_gold = 100
+        bonus_exp = 100 
+        bonus_trust = 10
         
         user.stats.gold += bonus_gold
         user.stats.exp += bonus_exp
+        user.stats.trust += bonus_trust
         
         # 레벨업 체크
         while user.stats.exp >= user.stats.max_exp:
@@ -294,14 +286,6 @@ async def reject_commission(user: User, post_id: str) -> bool:
     post.status = "rejected"
     await archive_repo.update(db_obj=post, obj_in={"status": post.status})
     
-    # 의뢰자(A)에게 바운티 환불
-    if post.bounty > 0:
-        from app.db.repository.user_repository import user_repo
-        author = await user_repo.get_by_uid(post.author_id)
-        if author:
-            author.stats.gold += post.bounty
-            await user_repo.update(db_obj=author, obj_in={"stats": author.stats})
-
     # 의뢰자(A)에게 거절 알림 발송
     await send_system_mail(
         user_id=post.author_id,
@@ -378,7 +362,6 @@ async def _promote_to_knowledge_card(answer: ArchiveAnswer):
         question=post.title,
         content=answer.content,
         correct_answer=answer.content,
-        bounty=10,
         trust_count=answer.trust_count,
         priority=100 if post.is_sos else 0,
         source_message_id=str(answer.id)
@@ -396,7 +379,7 @@ async def get_user_asked_posts(uid: str, skip: int = 0, limit: int = 20) -> tupl
     for p in posts:
         items.append({
             "id": str(p.id),
-            "type": "quest" if (p.is_sos or p.bounty > 0) else "post",
+            "type": "quest" if (p.is_sos or p.target_user_id) else "post",
             "title": p.title,
             "content": p.content,      # 내용 추가
             "tags": p.tags,               # 태그 추가
