@@ -9,37 +9,61 @@ from app.services.user_service import check_daily_reset
 
 
 async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
-    """일일 지식카드 5장을 조회합니다. (임시로 랜덤 5장)"""
+    """일일 지식카드 5장을 조회합니다. (ArchivePost 연동 카드 및 일반 퀴즈)"""
     # 1. 일일 초기화 체크
     if check_daily_reset(user):
         await user.save()
-        
-    # 2. 사실상 프론트엔드에서 ticketIndex로 페이지네이션/요청을 구분합니다.
-    
-    # DB에 카드가 없는 경우 임시 데이터
-    count = await KnowledgeCard.count()
-    if count == 0:
-        sample_cards = [
-            KnowledgeCard(type="vote", question="다음 중 파이썬의 프레임워크는?", choices=["Spring", "FastAPI"], correct_answer=1),
-            KnowledgeCard(type="vote", question="Pico는 어떤 성격일까?", choices=["시니컬하다", "다정하고 호기심많다"], correct_answer=1),
-            KnowledgeCard(type="question", question="오늘의 날씨는?", correct_answer="맑음"),
-            KnowledgeCard(type="quiz", question="2 + 2 = ?", correct_answer=4),
-        ]
-        await KnowledgeCard.insert_many(sample_cards)
-        
-    # 이미 푼 문제는 거르지 않고, 랜덤으로 5개 반환 리스트(간단히 앞 5개)
-    cards = await KnowledgeCard.find().limit(5).to_list()
-    
+
+    # 2. 이미 답변한 질문(아카이브 답변 기준) 및 본인이 작성한 질문 제외
+    from app.models.archive import ArchiveAnswer, ArchivePost
+    from beanie.operators import NotIn, Or, In
+
+    # 자신이 이미 답변한 포스트 ID 목록
+    answered_posts = await ArchiveAnswer.find(ArchiveAnswer.author_id == user.uid).to_list()
+    answered_post_ids = [ans.post_id for ans in answered_posts]
+
+    # 자신이 작성한 포스트 ID 목록
+    my_posts = await ArchivePost.find(ArchivePost.author_id == user.uid).to_list()
+    my_post_ids = [str(p.id) for p in my_posts]
+
+    excluded_linked_ids = list(set(answered_post_ids + my_post_ids))
+
+    # 3. 카드 조회 
+    # linked_post_id 가 없거나 (일반 퀴즈), 
+    # linked_post_id 가 있더라도 excluded_linked_ids 에 없는 것만 가져옴
+    if excluded_linked_ids:
+        query = KnowledgeCard.find(
+            Or(
+                KnowledgeCard.linked_post_id == None,
+                NotIn(KnowledgeCard.linked_post_id, excluded_linked_ids)
+            )
+        )
+    else:
+        query = KnowledgeCard.find()
+
+    # SOS 게시글 기반 카드 우선순위 (priority가 높은 순, 그 다음 최신순)
+    cards = await query.sort([("priority", -1), ("created_at", -1)]).limit(5).to_list()
+
+    # 4. 연동된 ArchivePost에서 summary 가져오기
+    linked_post_ids = [c.linked_post_id for c in cards if c.linked_post_id]
+    posts_map = {}
+    if linked_post_ids:
+        posts = await ArchivePost.find(In(ArchivePost.id, linked_post_ids)).to_list()
+        posts_map = {str(p.id): p for p in posts}
+
     return [
         {
             "id": str(c.id),
             "type": c.type,
             "question": c.question,
             "content": c.content,
+            "summary": posts_map.get(c.linked_post_id).summary if c.linked_post_id and c.linked_post_id in posts_map else "",
             "choices": c.choices,
+            "linked_post_id": c.linked_post_id,
         }
         for c in cards
     ]
+
 
 async def start_academy_session(user: User) -> dict:
     if check_daily_reset(user):
