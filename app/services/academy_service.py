@@ -125,10 +125,7 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         user.stats.trust += trust_gained
         
         # 레벨업 판정
-        if user.stats.exp >= user.stats.max_exp:
-            user.stats.exp -= user.stats.max_exp
-            user.stats.level += 1
-            user.stats.stamina = user.stats.max_stamina
+        user.stats.process_level_up()
             
         # 카드의 trust_count 증가 (골든 데이터셋 지표)
         card.trust_count += 1

@@ -47,12 +47,7 @@ async def sync_guest_stats(user: User, exp_gained: int, stamina_consumed: int, i
     stats.stamina = max(0, stats.stamina - stamina_consumed)
     
     # 레벨업 처리
-    max_exp = stats.max_exp
-    while stats.exp >= max_exp:
-        stats.exp -= max_exp
-        stats.level += 1
-        stats.stamina = stats.max_stamina
-        max_exp = stats.max_exp
+    stats.process_level_up()
         
     return await user_repo.update(db_obj=user, obj_in=user)
 

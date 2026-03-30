@@ -77,8 +77,17 @@ def _user_to_profile(user: User) -> UserProfileResponse:
 async def get_my_profile(
     current_user: CurrentUser,
 ):
-    if check_daily_reset(current_user):
+    is_updated = check_daily_reset(current_user)
+    
+    # 초과된 경험치가 있다면 레벨업 소급 적용
+    old_level = current_user.stats.level
+    current_user.stats.process_level_up()
+    if current_user.stats.level != old_level:
+        is_updated = True
+        
+    if is_updated:
         await current_user.save()
+        
     return _user_to_profile(current_user)
 
 # ══════════════════════════════════════

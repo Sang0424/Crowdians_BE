@@ -41,6 +41,13 @@ class UserStats(BaseModel):
         """최대 아카데미 티켓 수: 3 + (신뢰도 // 200)"""
         return 3 + (self.trust - 1000) // 200
 
+    def process_level_up(self):
+        """경험치가 넘칠 경우 레벨업을 반복 처리(while)하고 스태미나를 완충합니다."""
+        while self.exp >= self.max_exp:
+            self.exp -= self.max_exp
+            self.level += 1
+            self.stamina = self.max_stamina
+
 
 class EquippedParts(BaseModel):
     """장착된 파츠 정보"""

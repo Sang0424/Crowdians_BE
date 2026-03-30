@@ -40,6 +40,7 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     - '{nickname}'의 질문에 대해 네가 아는 선에서 대답하고 모르는 내용은 솔직하게 모른다고 답해.
     - 최대한 핵심적인 내용만을 말하고 부가설명은 하지마.
     - 답변은 3문장을 넘기지 마.
+    - 읽기 좋게 적절한 위치에서 줄바꿈(\n)을 적극적으로 사용해줘.
     [언어 설정 (가장 중요 ⭐)]
     - 가장 우선적으로 사용자의 질문언어에 맞춰서 답변해.
     - 만약 사용자가 여러 언어로 질문하면 {target_language}로 답변해.
@@ -181,10 +182,7 @@ async def send_chat_message(
     # user.stats.intimacy += 1 (지시: 채팅 시 친밀도 상승 제거)
     
     # 레벨업 로직 (예: max_exp 초과 시)
-    if user.stats.exp >= user.stats.max_exp:
-        user.stats.exp -= user.stats.max_exp
-        user.stats.level += 1
-        user.stats.stamina = user.stats.max_stamina
+    user.stats.process_level_up()
         
     await user.save()
     
@@ -242,6 +240,8 @@ async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos:
     
     위 문맥을 바탕으로 지식 커뮤니티(아카이브)에 등록할 질문 형식의 '제목'과 '내용'을 작성해주세요.
     {'특히 이것은 SOS (긴급 구조) 요청이므로, 질문 내용이 명확하고 눈에 띄게 작성되어야 합니다.' if is_sos else '이것은 AI 답변에 대한 불만족(RLHF)으로 접수된 내용이므로, 어떤 부분이 해결되지 않았는지 명확한 질문 형태로 작성해주세요.'}
+    
+    내용(content)을 작성할 때는 읽기 좋게 문장마다 또는 의미 단위로 줄바꿈(\n)을 적극적으로 포함해주세요.
     
     출력은 반드시 다음 JSON 형식으로만 해주세요:
     {{"title": "질문 제목", "content": "질문 상세 내용"}}
