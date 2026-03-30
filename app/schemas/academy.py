@@ -10,6 +10,7 @@ class KnowledgeCardResponse(BaseModel):
     id: str             # card._id 문자열
     type: str           # "vote" | "teach" | "quiz"
     question: str
+    content: str | None = None
     choices: list[str]
     bounty: int
 

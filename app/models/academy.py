@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 class KnowledgeCard(Document):
     """지식 카드 (Academy 문제)"""
     type: str = "vote"              # "vote" (A/B 선택), "teach" (주관식 또는 상식), "quiz"
-    question: str
+    question: str                   # 질문 제목 또는 요약
+    content: str | None = None      # 질문 상세 내용
     choices: list[str] = Field(default_factory=list)
     correct_answer: str | int = ""  # 정답 (번호일 수도 있고 텍스트일 수도 있음)
     bounty: int = 10                # 보상 Gold 양

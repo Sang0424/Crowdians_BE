@@ -55,7 +55,8 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
     if not target_user_id:
         card = KnowledgeCard(
             type="teach",
-            question=f"[{category}] {title}\n\n{content}",
+            question=f"[{category}] {title}",
+            content=content,
             choices=[],
             correct_answer="",
             bounty=bounty,
@@ -375,6 +376,7 @@ async def _promote_to_knowledge_card(answer: ArchiveAnswer):
     card = KnowledgeCard(
         type="teach",     # 주관식 또는 정답 있는 케이스
         question=post.title,
+        content=answer.content,
         correct_answer=answer.content,
         bounty=10,
         trust_count=answer.trust_count,

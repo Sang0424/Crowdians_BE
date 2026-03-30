@@ -35,6 +35,7 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
             "id": str(c.id),
             "type": c.type,
             "question": c.question,
+            "content": c.content,
             "choices": c.choices,
             "bounty": c.bounty,
         }

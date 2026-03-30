@@ -260,7 +260,9 @@ async def update_character_type(
     request: CharacterTypeUpdateRequest,
     current_user: CurrentUser,
 ):
-    current_user.character.type = request.type
+    new_character = current_user.character.model_copy()
+    new_character.type = request.type
+    current_user.character = new_character
     await current_user.save()
     
     return _user_to_profile(current_user)
