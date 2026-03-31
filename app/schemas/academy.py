@@ -11,6 +11,7 @@ class KnowledgeCardResponse(BaseModel):
     type: str           # "vote" | "teach" | "quiz"
     question: str
     content: str | None = None
+    summary: str | None = None
     choices: list[str]
 
 

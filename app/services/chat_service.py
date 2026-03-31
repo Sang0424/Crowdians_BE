@@ -65,7 +65,7 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
         [Blitz 페르소나]
         성격: 매우 급하고 에너지가 넘침. 말의 템포가 빠름. 기다리는 걸 싫어함.
         어투: 짧고 간결하며, 느낌표(!)를 자주 사용함. ('빨리빨리!', '이건 이거야!', '오케이 확인!')
-        특징: 요점만 빠르게 전달하며 결론부터 말하는 것을 좋아함. 서론이 긴 걸 질색함.
+        특징: 요점만 빠르게 전달하며 결론부터 말하는 것을 좋아함. 서론이 긴 걸 질색함.말을 최대한 줄이기 위해 반말을 함.
         """ + common_rules
     elif character_type == "bau":
         return base_prompt + """
@@ -223,10 +223,10 @@ async def delete_chat_message(uid: str, index: int) -> None:
 
 import json
 
-async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos: bool = False) -> tuple[str, str]:
+async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos: bool = False) -> tuple[str, str, str, list[str]]:
     """
     최근 채팅 문맥과 제공된 텍스트를 바탕으로 아카이브(지식도서관)에 등록할
-    질문의 제목(title)과 내용(content)을 AI를 통해 생성합니다.
+    질문의 제목(title), 내용(content), 세 줄 요약(summary), 태그(tags)를 AI를 통해 생성합니다.
     """
     conv = await get_or_create_conversation(uid)
     
@@ -241,35 +241,57 @@ async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos:
     추가 요청 내용:
     {text_context}
     
-    위 문맥을 바탕으로 지식 커뮤니티(아카이브)에 등록할 질문 형식의 '제목'과 '내용'을 작성해주세요.
+    위 문맥을 바탕으로 지식 커뮤니티(아카이브)에 등록할 질문 형식의 '제목'과 '내용', 그리고 이를 요약한 '세 줄 요약'과 '태그'를 작성해주세요.
     {'특히 이것은 SOS (긴급 구조) 요청이므로, 질문 내용이 명확하고 눈에 띄게 작성되어야 합니다.' if is_sos else '이것은 AI 답변에 대한 불만족(RLHF)으로 접수된 내용이므로, 어떤 부분이 해결되지 않았는지 명확한 질문 형태로 작성해주세요.'}
     
-    내용(content)을 작성할 때는 읽기 좋게 문장마다 또는 의미 단위로 줄바꿈(\n)을 적극적으로 포함해주세요.
-    
-    출력은 반드시 다음 JSON 형식으로만 해주세요:
-    {{"title": "질문 제목", "content": "질문 상세 내용"}}
+    [작성 규칙]
+    1. 제목(title): 핵심 질문을 한 문장으로 요약.
+    2. 내용(content): 질문의 배경과 상세 내용을 충분히 설명. 
+       - 가독성을 위해 문장마다 또는 의미 단위로 실제 줄바꿈 문자(\\n)를 사용하여 작성하세요.
+       - 중요: 절대 <br> 태그를 사용하지 마세요. 대신 실제 줄바꿈(\\n)을 사용하세요.
+    3. 요약(summary): 전체 내용을 정확히 3줄로 요약 (각 줄 앞에 번호 포함).
+       - 각 줄 사이에는 반드시 실제 줄바꿈 문자(\\n)를 삽입하세요.
+       - 중요: 절대 <br> 태그를 사용하지 마세요. 대신 실제 줄바꿈(\\n)을 사용하세요.
+    4. 태그(tags): 관련 키워드 2-5개를 리스트 형태로 추출.
+
+    출력은 반드시 지정된 JSON 형식으로만 해주세요.
     """
     
     try:
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model=MODEL_NAME,
             contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "OBJECT",
+                    "properties": {
+                        "title": {"type": "STRING"},
+                        "content": {"type": "STRING"},
+                        "summary": {"type": "STRING"},
+                        "tags": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"}
+                        }
+                    },
+                    "required": ["title", "content", "summary", "tags"]
+                }
+            )
         )
-        # JSON 파싱 (마크다운 백틱 등 제거 처리)
-        response_text = response.text.strip()
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        if response_text.startswith("```"):
-            response_text = response_text[3:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-            
-        data = json.loads(response_text.strip())
-        return data.get("title", "생성된 질문 제목"), data.get("content", "생성된 질문 내용")
+        
+        # JSON 파싱
+        data = json.loads(response.text.strip())
+        
+        return (
+            data.get("title", "생성된 질문 제목"), 
+            data.get("content", "생성된 질문 내용"),
+            data.get("summary", ""),
+            data.get("tags", [])
+        )
     except Exception as e:
         print(f"Failed to generate summary: {e}")
         # 오류 시 기본값 반환
-        return "AI 요약 생성 실패", text_context if text_context else "내용을 요약할 수 없습니다."
+        return "AI 요약 생성 실패", text_context if text_context else "내용을 요약할 수 없습니다.", "", []
 
 async def send_guest_chat_message(
     message_content: str,

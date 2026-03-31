@@ -11,10 +11,9 @@ from app.models.academy import KnowledgeCard
 
 from app.db.repository.archive_repository import archive_repo, archive_answer_repo
 from app.services.mailbox_service import send_system_mail
-from app.core.llm import generate_tags_and_summary
 
 
-async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", locale: str = "ko", target_user_id: str = None) -> str:
+async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", locale: str = "ko", target_user_id: str = None, summary: str = "", tags: list[str] = None) -> str:
     """새로운 지식 도서관 질문을 등록합니다."""
     # 직접 의뢰(Direct Commission)인 경우 상태를 'commissioned'로 설정
     status = "commissioned" if target_user_id else "open"
@@ -29,6 +28,8 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
         "character_type": user.character.type if user.character else "unknown",
         "target_user_id": target_user_id,
         "status": status,
+        "summary": summary,
+        "tags": tags or [],
     })
     
     # 직접 의뢰인 경우 대상 유저에게 알림 메일 발송
@@ -47,6 +48,7 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
             type="teach",
             question=f"[{category}] {title}",
             content=content,
+            summary=summary,
             choices=[],
             correct_answer="",
             priority=100 if is_sos else 0, # SOS 게시글인 경우 우선순위 상향
@@ -55,31 +57,6 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
         await card.insert()
     
     return str(post.id)
-
-
-async def update_post_tags_and_summary(post_id: str):
-    """지정된 게시물의 태그와 요약을 LLM을 통해 생성하고 업데이트합니다."""
-    print(f"🔥 [Background Task 시작] post_id: {post_id}")
-    try:
-        # String 형태의 ID를 MongoDB ObjectID 객체로 변환하여 조회 안정성 확보
-        oid = PydanticObjectId(post_id)
-        post = await ArchivePost.get(oid)
-    except Exception:
-        # PydanticObjectId 변환 실패 시 일반 get 폴백
-        print(f"❌ [DB 오류] ObjectID 변환 또는 조회 실패: {e}")
-        post = await ArchivePost.get(post_id)
-    if not post:
-        print(f"❌ [DB 오류] 게시글을 찾을 수 없습니다: {post_id}")
-        return
-
-    print(f"✅ [DB 조회 성공] 글 내용 일부: {post.content[:20]}... LLM 호출 시작")
-        
-    result = await generate_tags_and_summary(post.content)
-    
-    post.tags = result.get("tags", [])
-    post.summary = result.get("summary", "")
-    await post.save()
-    print(f"✅ [DB 저장 완료] 태그: {post.tags}, 요약: {post.summary}")
 
 
 async def get_archive_list(sort: str, skip: int = 0, limit: int = 10, locale: str = "ko") -> tuple[list[ArchivePost], int]:
@@ -361,6 +338,7 @@ async def _promote_to_knowledge_card(answer: ArchiveAnswer):
         type="teach",     # 주관식 또는 정답 있는 케이스
         question=post.title,
         content=answer.content,
+        summary=post.summary,
         correct_answer=answer.content,
         trust_count=answer.trust_count,
         priority=100 if post.is_sos else 0,

@@ -44,20 +44,13 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
     # SOS 게시글 기반 카드 우선순위 (priority가 높은 순, 그 다음 최신순)
     cards = await query.sort([("priority", -1), ("created_at", -1)]).limit(5).to_list()
 
-    # 4. 연동된 ArchivePost에서 summary 가져오기
-    linked_post_ids = [c.linked_post_id for c in cards if c.linked_post_id]
-    posts_map = {}
-    if linked_post_ids:
-        posts = await ArchivePost.find(In(ArchivePost.id, linked_post_ids)).to_list()
-        posts_map = {str(p.id): p for p in posts}
-
     return [
         {
             "id": str(c.id),
             "type": c.type,
             "question": c.question,
             "content": c.content,
-            "summary": posts_map.get(c.linked_post_id).summary if c.linked_post_id and c.linked_post_id in posts_map else "",
+            "summary": c.summary or "",
             "choices": c.choices,
             "linked_post_id": c.linked_post_id,
         }

@@ -23,7 +23,7 @@ from app.services.chat_service import (
     generate_summary_for_archive,
     send_guest_chat_message,
 )
-from app.services.archive_service import create_archive_post,update_post_tags_and_summary 
+from app.services.archive_service import create_archive_post
 from app.core.exceptions import InsufficientResourceError
 
 router = APIRouter()
@@ -175,7 +175,7 @@ async def unlike_message(
     background_tasks: BackgroundTasks,
 ):
     # Todo: Move to chat service completely? Currently fine as it composes two service calls.
-    title, content = await generate_summary_for_archive(
+    title, content, summary, tags = await generate_summary_for_archive(
         uid=current_user.uid,
         text_context=f"불만족 답변(인덱스 {request.messageIndex}) 내역을 바탕으로 더 나은 답변을 위한 질문 작성",
         is_sos=False
@@ -186,10 +186,10 @@ async def unlike_message(
         title=title,
         content=content,
         category="qna",
-        is_sos=False
+        is_sos=False,
+        summary=summary,
+        tags=tags
     )
-
-    background_tasks.add_task(update_post_tags_and_summary, post_id)
     
     return ChatUnlikeResponse(
         success=True,
@@ -214,7 +214,7 @@ async def request_sos(
 ):
     # SOS 요청은 이제 무료입니다 (데이터 수집 장려)
     
-    title, content = await generate_summary_for_archive(
+    title, content, summary, tags = await generate_summary_for_archive(
         uid=current_user.uid,
         text_context=request.question,
         is_sos=True
@@ -226,10 +226,10 @@ async def request_sos(
         title=title,
         content=content,
         category="sos",
-        is_sos=True
+        is_sos=True,
+        summary=summary,
+        tags=tags
     )
-
-    background_tasks.add_task(update_post_tags_and_summary, post_id)
     
     return ChatSosResponse(
         success=True,
