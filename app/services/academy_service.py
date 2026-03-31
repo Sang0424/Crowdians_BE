@@ -28,21 +28,39 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
 
     excluded_linked_ids = list(set(answered_post_ids + my_post_ids))
 
-    # 3. 카드 조회 
-    # linked_post_id 가 없거나 (일반 퀴즈), 
-    # linked_post_id 가 있더라도 excluded_linked_ids 에 없는 것만 가져옴
-    if excluded_linked_ids:
-        query = KnowledgeCard.find(
-            Or(
-                KnowledgeCard.linked_post_id == None,
-                NotIn(KnowledgeCard.linked_post_id, excluded_linked_ids)
-            )
-        )
-    else:
-        query = KnowledgeCard.find()
+    # 3. 공통 제외 쿼리 생성
+    base_filter = Or(
+        KnowledgeCard.linked_post_id == None,
+        NotIn(KnowledgeCard.linked_post_id, excluded_linked_ids)
+    ) if excluded_linked_ids else {}
 
-    # SOS 게시글 기반 카드 우선순위 (priority가 높은 순, 그 다음 최신순)
-    cards = await query.sort([("priority", -1), ("created_at", -1)]).limit(5).to_list()
+    import random
+    
+    # ── Teach 타입 2장 확보 ──
+    teach_cards = await KnowledgeCard.find(
+        base_filter,
+        KnowledgeCard.type == "teach"
+    ).sort([("priority", -1), ("created_at", -1)]).limit(2).to_list()
+    
+    # ── Vote 타입 3장 확보 ──
+    vote_cards = await KnowledgeCard.find(
+        base_filter,
+        KnowledgeCard.type == "vote"
+    ).sort([("priority", -1), ("created_at", -1)]).limit(3).to_list()
+    
+    # 부족한 카드 보충 (총 5장이 되도록)
+    total_cards = teach_cards + vote_cards
+    if len(total_cards) < 5:
+        existing_ids = [c.id for c in total_cards]
+        needed = 5 - len(total_cards)
+        extra_cards = await KnowledgeCard.find(
+            base_filter,
+            NotIn(KnowledgeCard.id, existing_ids)
+        ).sort([("priority", -1), ("created_at", -1)]).limit(needed).to_list()
+        total_cards += extra_cards
+    
+    # 다양한 노출을 위해 섞어줌
+    random.shuffle(total_cards)
 
     return [
         {
@@ -54,7 +72,7 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
             "choices": c.choices,
             "linked_post_id": c.linked_post_id,
         }
-        for c in cards
+        for c in total_cards
     ]
 
 
@@ -101,17 +119,24 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         except Exception as e:
             print(f"Failed to submit archive answer via academy: {e}")
 
-    # 3. 채점
+    # 3. 채점 (정답이 지정되지 않은 'vote'나 'teach'는 참여만으로 성공 처리)
     is_correct = True
+    
+    if card.type == "quiz" and card.correct_answer:
+        # 고정 정답이 있는 퀴즈인 경우에만 체크
+        is_correct = (str(card.correct_answer) == str(answer))
 
     exp_gained = 0
     gold_gained = 0
     trust_gained = 0
     
+    # 4. 보상 계산
+    # RLHF(vote, teach) 목적의 데이터 수집인 경우 무조건 보상, 
+    # 정답이 있는 퀴즈일 경우 정답일 때만 보상
     if is_correct:
-        exp_gained = 10      # 퀴즈 정답 EXP (고정)
-        gold_gained = 5     # 퀴즈 정답 Gold (고정)
-        trust_gained = 1     # 신뢰도 상승 (고정)
+        exp_gained = 10      # 기본 EXP
+        gold_gained = 5     # 기본 Gold
+        trust_gained = 1     # 신뢰도 상승
         
         user.stats.exp += exp_gained
         user.stats.gold += gold_gained
@@ -120,7 +145,7 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         # 레벨업 판정
         user.stats.process_level_up()
             
-        # 카드의 trust_count 증가 (골든 데이터셋 지표)
+        # 카드의 trust_count 증가 (데이터 신뢰도 누적)
         card.trust_count += 1
         await card.save()
         
@@ -138,12 +163,17 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
     )
     await response_log.insert()
     
+    # 메시지 커스터마이징
+    message = "소중한 의견이 기록되었습니다! 보상을 획득하셨습니다."
+    if card.type == "quiz":
+        message = "정답입니다! 지식이 한 층 깊어졌습니다." if is_correct else "아쉽게도 오답입니다. 다음 기회를 노려보세요!"
+
     return {
         "isCorrect": is_correct,
         "rewardExp": exp_gained,
         "rewardGold": gold_gained,
         "rewardTrust": trust_gained,
-        "message": "소중한 의견이 기록되었습니다! 보상을 획득하셨습니다."
+        "message": message
     }
 
 async def reject_card_answer(user: User, card_id: str) -> dict:

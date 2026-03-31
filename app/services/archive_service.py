@@ -199,6 +199,54 @@ async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
         "content": content,
     })
     
+    # ── [NEW] 지식 카드(Vote 타입) 동적 생성 ──
+    # 일반 질문(is_sos가 아니거나 target_user_id가 없는 경우 등)에 대해 
+    # RLHF를 위한 선택형(Vote) 문제를 자동 생성합니다.
+    if not post.target_user_id:
+        import random
+        from app.models.academy import KnowledgeCard
+        
+        # ── [NEW] 문제 타입 비율 조절: 게시글당 Vote 카드는 최대 3개까지만 ──
+        vote_count = await KnowledgeCard.find(
+            KnowledgeCard.linked_post_id == post_id,
+            KnowledgeCard.type == "vote"
+        ).count()
+        
+        if vote_count < 3:
+            choices = []
+            # 현재 이 답변을 제외한 기존 답변들을 가져옵니다.
+            existing_answers = await ArchiveAnswer.find(
+                ArchiveAnswer.post_id == post_id,
+                ArchiveAnswer.id != answer.id
+            ).to_list()
+            
+            if not existing_answers:
+                # 첫 번째 유저 답변인 경우: LLM이 작성한 요약(summary)과 비교
+                if post.summary:
+                    choices = [post.summary, content]
+            else:
+                # 두 번째 이상의 답변인 경우: 기존 답변 중 하나를 랜덤으로 골라 비교
+                other_ans = random.choice(existing_answers)
+                choices = [other_ans.content, content]
+                
+            if len(choices) == 2:
+                # 보기가 2개 준비되었다면 Vote 카드 생성
+                # 순서를 섞어줌 (유저 답변이 항상 뒤에 나오지 않도록)
+                random.shuffle(choices)
+                
+                vote_card = KnowledgeCard(
+                    type="vote",
+                    question=f"{post.title}",
+                    content=post.content,
+                    summary=post.summary,
+                    choices=choices,
+                    correct_answer="",  # 다수결 방식이므로 정답 없음
+                    priority=50 if post.is_sos else 0,
+                    linked_post_id=post_id,
+                    source_message_id=str(answer.id)
+                )
+                await vote_card.insert()
+
     # 캐싱용 answer_count 증가
     post.answer_count += 1
     post.updatedAt = datetime.now(timezone.utc)

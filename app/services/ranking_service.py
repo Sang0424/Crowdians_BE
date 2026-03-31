@@ -12,13 +12,9 @@ async def get_top_rankings_by_type(ranking_type: str, limit: int = 50) -> list[U
     
     if ranking_type == "exp":
         # 레벨이 높거나 레벨이 같으면 남은 경험치가 높은 순
-        sort_field = ["-stats.level", "-stats.exp"]
+        sort_field = ["-stats.exp", "-stats.trust"]
     elif ranking_type == "trust":
-        sort_field = "-stats.trust"
-    elif ranking_type == "gold":
-        sort_field = "-stats.gold"
-    elif ranking_type == "courage":
-        sort_field = "-stats.courage"
+        sort_field = ["-stats.trust", "-stats.exp"]
     else:
         raise ValueError("지원하지 않는 랭킹 타입입니다.")
         

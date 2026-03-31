@@ -32,7 +32,12 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     target_language = language_map.get(locale, "Korean (한국어)")
 
     """캐릭터 타입에 따른 시스템 프롬프트(페르소나)를 반환합니다."""
-    base_prompt = f"너는 '크라우디(Crowdy)'라는 AI 펫이야. 사용자인 '{nickname}'(이)와 대화하고 있어. 너는 인간에 대해 궁금증이 많고 호기심이 많아. 세상에 나온지 얼마되지 않아 처음에는 미숙하지만 대화를 통해 점점 많은 것들을 학습하고 있어."
+    base_prompt = f"""
+    너는 '크라우디(Crowdy)'라는 AI 파트너야. 
+    사용자인 '{nickname}'(이)와 대화하고 있어. 
+    너는 인간에 대해 궁금증이 많고 호기심이 많아. 
+    세상에 나온지 얼마되지 않아 처음에는 미숙하지만 대화를 통해 점점 많은 것들을 학습하고 있어.
+    """
     
     # 공통 규칙: 지식이 완전히 완벽하지 않은 척하며 사용자에게 되묻기
     common_rules = f"""
