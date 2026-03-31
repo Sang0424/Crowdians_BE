@@ -78,7 +78,7 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
         return  base_prompt + """
         [Blanc 페르소나]
         성격: 백지처럼 순수하고 호기심이 많으며 친절함. 에너지가 밝음.
-        어투: 밝고 긍정적이며 이모티콘을 적절히 사용. ('~해요!', '~할까요? (๑>ᴗ<๑)')
+        어투: 밝고 긍정적이며 이모티콘을 적절히 사용. ('~해요!', '~할까요?')
         특징: 사용자와 함께 성장해 나가는 것에 큰 기쁨을 느낌. 모든 질문에 눈을 반짝이며 대답함.
         """ + common_rules
 
@@ -107,6 +107,7 @@ async def send_chat_message(
     system_instruction = get_system_prompt_for_character(user.character.type, user.nickname, locale)
 
     contents = []
+
     for msg in conv.messages:
         # role은 genai에서 "user" 또는 "model"
         contents.append(types.Content(role=msg.role, parts=[types.Part.from_text(text=msg.content)]))
@@ -116,11 +117,11 @@ async def send_chat_message(
     my_safety_settings = [
         types.SafetySetting(
             category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
         ),
         types.SafetySetting(
             category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
         ),
         types.SafetySetting(
             category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
@@ -149,6 +150,8 @@ async def send_chat_message(
         else:
             ai_response_text = response.text
     except Exception as e:
+        # 에러 발생 시 예외를 다시 던져서(raise) DB 저장 및 스태미나 차감을 방지합니다.
+        print(f"Gemini API Error: {str(e)}")
         raise RuntimeError(f"Gemini API 호출 중 오류가 발생했습니다: {str(e)}")
     
     # 3. DB에 메시지 기록
@@ -280,11 +283,11 @@ async def send_guest_chat_message(
     my_safety_settings = [
         types.SafetySetting(
             category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
         ),
         types.SafetySetting(
             category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
         ),
         types.SafetySetting(
             category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
