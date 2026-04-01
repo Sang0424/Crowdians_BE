@@ -12,7 +12,7 @@ from app.models.archive import DomainCategory
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 
 # Gemini 클라이언트 초기화
 # 환경변수나 설정에서 GEMINI_API_KEY를 가져옵니다.
@@ -413,3 +413,31 @@ async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: s
             "tags": ["error"],
             "domain_category": DomainCategory.ETC
         }
+
+async def generate_honeypot_answer(raw_prompt: str) -> str:
+    """질문 원본을 바탕으로 그럴싸하지만 완전히 틀린 오답(Hallucination)을 생성합니다."""
+    
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-3.1-flash-lite-preview", 
+        temperature=0.7,
+        google_api_key=settings.GEMINI_API_KEY
+    )
+    parser = StrOutputParser()
+    
+    prompt = PromptTemplate(
+        template="""당신은 함정 문제를 출제하는 시험관입니다.
+        아래 유저의 질문에 대해, 얼핏 보면 정답 같지만 전문가가 보면 명백하게 틀린 오답(Hallucination)을 딱 1문장으로 작성하세요.
+        
+        [유저 질문]: {raw_prompt}
+        [함정 오답]:""",
+        input_variables=["raw_prompt"]
+    )
+    
+    chain = prompt | llm | parser
+    
+    try:
+        honeypot = await chain.ainvoke({"raw_prompt": raw_prompt})
+        return honeypot.strip()
+    except Exception as e:
+        print(f"Honeypot Generation Failed: {e}")
+        return "이 질문에 대한 정확한 정보가 아직 부족합니다."

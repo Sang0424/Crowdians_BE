@@ -14,6 +14,7 @@ class KnowledgeCard(Document):
     summary: str | None = None      # 질문 요약 (ArchivePost 연동 시 복사)
     choices: list[str] = Field(default_factory=list)
     correct_answer: str | int = ""  # 정답 (번호일 수도 있고 텍스트일 수도 있음)
+    honeypot_answer: str = Field(default="", description="매크로/어뷰징 유저를 걸러내기 위한 함정 오답")
     trust_count: int = 0            # 투표 수/신뢰도 (10 이상 시 골든 데이터셋 편입 등)
     priority: int = 0               # 큐에서의 노출 우선순위 (SOS 게시글 등)
     

@@ -119,18 +119,47 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         except Exception as e:
             print(f"Failed to submit archive answer via academy: {e}")
 
-    # 3. 채점 (정답이 지정되지 않은 'vote'나 'teach'는 참여만으로 성공 처리)
+    # 🌟 3. [추가] 허니팟(어텐션 체크) 적발 로직
+    if card.honeypot_answer and str(answer) == str(card.honeypot_answer):
+        # 패널티: 신뢰도 대폭 차감
+        penalty_trust = 50
+        user.stats.trust = max(0, user.stats.trust - penalty_trust)
+        await user.save()
+        
+        # 패널티 로그 기록
+        response_log = CardResponse(
+            user_id=user.uid,
+            card_id=card_id,
+            answer=answer,
+            is_correct=False,
+            is_rejected=False,
+            reward_trust=-penalty_trust # 음수 기록
+        )
+        await response_log.insert()
+        
+        return {
+            "isCorrect": False,
+            "rewardExp": 0,
+            "rewardGold": 0,
+            "rewardTrust": -penalty_trust,
+            "message": "부정확한 답변을 선택하셨습니다. 신뢰도가 하락합니다."
+        }
+
+    # 4. 채점 (정답이 지정되지 않은 'vote'나 'teach'는 참여만으로 성공 처리)
     is_correct = True
     
     if card.type == "quiz" and card.correct_answer:
         # 고정 정답이 있는 퀴즈인 경우에만 체크
         is_correct = (str(card.correct_answer) == str(answer))
 
+    # 🌟 5. [추가] 신뢰도 기반 가중치(Weight) 계산
+    voting_weight = max(1, user.stats.trust // 500)
+
     exp_gained = 0
     gold_gained = 0
     trust_gained = 0
     
-    # 4. 보상 계산
+    # 6. 보상 계산
     # RLHF(vote, teach) 목적의 데이터 수집인 경우 무조건 보상, 
     # 정답이 있는 퀴즈일 경우 정답일 때만 보상
     if is_correct:
@@ -145,13 +174,13 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         # 레벨업 판정
         user.stats.process_level_up()
             
-        # 카드의 trust_count 증가 (데이터 신뢰도 누적)
-        card.trust_count += 1
+        # 🌟 7. [수정] 카드의 trust_count 증가 (단순 +1이 아닌 가중치 반영)
+        card.trust_count += voting_weight
         await card.save()
         
     await user.save()
     
-    # 5. 카드 응답 내역 저장
+    # 8. 카드 응답 내역 저장
     response_log = CardResponse(
         user_id=user.uid,
         card_id=card_id,
@@ -164,9 +193,10 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
     await response_log.insert()
     
     # 메시지 커스터마이징
-    message = "소중한 의견이 기록되었습니다! 보상을 획득하셨습니다."
+    item_type_str = "참여" if card.type in ["vote", "teach"] else "정답"
+    message = f"지식 {item_type_str} 보상을 획득하셨습니다! (영향력: {voting_weight}점)"
     if card.type == "quiz":
-        message = "정답입니다! 지식이 한 층 깊어졌습니다." if is_correct else "아쉽게도 오답입니다. 다음 기회를 노려보세요!"
+        message = f"정답입니다! 지식이 한 층 깊어졌습니다. (영향력: {voting_weight}점)" if is_correct else "아쉽게도 오답입니다. 다음 기회를 노려보세요!"
 
     return {
         "isCorrect": is_correct,

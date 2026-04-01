@@ -11,6 +11,7 @@ from app.models.academy import KnowledgeCard
 
 from app.db.repository.archive_repository import archive_repo, archive_answer_repo
 from app.services.mailbox_service import send_system_mail
+from app.services.chat_service import generate_honeypot_answer
 
 
 async def create_archive_post(
@@ -250,6 +251,17 @@ async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
                 # 순서를 섞어줌 (유저 답변이 항상 뒤에 나오지 않도록)
                 random.shuffle(choices)
                 
+                # ── [NEW] 약 40% 확률로 허니팟(Honeypot) 추가 ──
+                honeypot_answer = ""
+                if random.random() < 0.4:
+                    try:
+                        honeypot_answer = await generate_honeypot_answer(post.content)
+                        if honeypot_answer and honeypot_answer not in choices:
+                            choices.append(honeypot_answer)
+                            random.shuffle(choices)
+                    except Exception as e:
+                        print(f"Honeypot generation skipped: {e}")
+
                 vote_card = KnowledgeCard(
                     type="vote",
                     question=f"{post.title}",
@@ -257,6 +269,7 @@ async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
                     summary=post.summary,
                     choices=choices,
                     correct_answer="",  # 다수결 방식이므로 정답 없음
+                    honeypot_answer=honeypot_answer,
                     priority=50 if post.is_sos else 0,
                     linked_post_id=post_id,
                     source_message_id=str(answer.id)
