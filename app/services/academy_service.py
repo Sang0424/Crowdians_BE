@@ -29,22 +29,23 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
     excluded_linked_ids = list(set(answered_post_ids + my_post_ids))
 
     # 3. 공통 제외 쿼리 생성
-    base_filter = Or(
-        KnowledgeCard.linked_post_id == None,
-        NotIn(KnowledgeCard.linked_post_id, excluded_linked_ids)
-    ) if excluded_linked_ids else {}
+    base_filter = KnowledgeCard.find(
+        KnowledgeCard.is_migrated == False,
+        Or(
+            KnowledgeCard.linked_post_id == None,
+            NotIn(KnowledgeCard.linked_post_id, excluded_linked_ids)
+        ) if excluded_linked_ids else {}
+    )
 
     import random
     
     # ── Teach 타입 2장 확보 ──
-    teach_cards = await KnowledgeCard.find(
-        base_filter,
+    teach_cards = await base_filter.find(
         KnowledgeCard.type == "teach"
     ).sort([("priority", -1), ("created_at", -1)]).limit(2).to_list()
     
     # ── Vote 타입 3장 확보 ──
-    vote_cards = await KnowledgeCard.find(
-        base_filter,
+    vote_cards = await base_filter.find(
         KnowledgeCard.type == "vote"
     ).sort([("priority", -1), ("created_at", -1)]).limit(3).to_list()
     
@@ -53,8 +54,7 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
     if len(total_cards) < 5:
         existing_ids = [c.id for c in total_cards]
         needed = 5 - len(total_cards)
-        extra_cards = await KnowledgeCard.find(
-            base_filter,
+        extra_cards = await base_filter.find(
             NotIn(KnowledgeCard.id, existing_ids)
         ).sort([("priority", -1), ("created_at", -1)]).limit(needed).to_list()
         total_cards += extra_cards
@@ -239,3 +239,131 @@ async def reject_card_answer(user: User, card_id: str) -> dict:
     }
 
 
+
+async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_answer: str) -> dict:
+    """A/B 테스트 방식의 투표를 처리하고 선호도 통계를 업데이트합니다."""
+    # 1. 일일 초기화
+    if check_daily_reset(user):
+        await user.save()
+
+    # 2. 카드 조회
+    from bson import ObjectId
+    try:
+        card = await KnowledgeCard.get(ObjectId(card_id))
+    except Exception:
+        raise ValueError("유효하지 않은 카드 ID입니다.")
+        
+    if not card or card.is_migrated:
+        raise ValueError("카드를 찾을 수 없거나 이미 마이그레이션이 완료되었습니다.")
+
+    # 🌟 3. 허니팟(어텐션 체크) 검사
+    # A/B 테스트에서 chosen_answer가 허니팟이면 패널티
+    if card.honeypot_answer and str(chosen_answer) == str(card.honeypot_answer):
+        penalty_trust = 50
+        user.stats.trust = max(0, user.stats.trust - penalty_trust)
+        await user.save()
+        
+        response_log = CardResponse(
+            user_id=user.uid,
+            card_id=card_id,
+            answer=chosen_answer,
+            is_correct=False,
+            reward_trust=-penalty_trust
+        )
+        await response_log.insert()
+        
+        return {
+            "success": False,
+            "message": "부정확한 답변을 선택하셨습니다. 신뢰도가 하락합니다.",
+            "rewardTrust": -penalty_trust
+        }
+
+    # 4. 신뢰도 기반 가중치 계산 (1000점당 1점의 가중치 등 정책에 맞게 조정 가능)
+    voting_weight = max(1, user.stats.trust // 500)
+
+    # 5. 통계 업데이트
+    if not card.choice_matches: card.choice_matches = {}
+    if not card.choice_wins: card.choice_wins = {}
+
+    for ans in [chosen_answer, unchosen_answer]:
+        card.choice_matches[ans] = card.choice_matches.get(ans, 0) + 1
+        if ans not in card.choice_wins: card.choice_wins[ans] = 0
+            
+    card.choice_wins[chosen_answer] += voting_weight
+    card.total_matches += 1
+
+    # 6. 보상 지급 (기존 보상 로직 통합)
+    exp_gained = 10
+    gold_gained = 5
+    trust_gained = 1
+    
+    user.stats.exp += exp_gained
+    user.stats.gold += gold_gained
+    user.stats.trust += trust_gained
+    user.stats.process_level_up()
+    await user.save()
+
+    # 🌟 7. 골든 데이터셋 임계점 돌파 검사 (threshold = 100)
+    MATCHES_THRESHOLD = 100
+    if not card.is_migrated and card.total_matches >= MATCHES_THRESHOLD:
+        from app.models.golden_dataset import GoldenDataset
+        from app.models.archive import ArchivePost
+        
+        # 승률 계산 및 정렬 (허니팟 제외)
+        results = []
+        for ans in card.choices:
+            if card.honeypot_answer and str(ans) == str(card.honeypot_answer):
+                continue # 허니팟 답변 제외
+                
+            wins = card.choice_wins.get(ans, 0)
+            matches = card.choice_matches.get(ans, 0)
+            win_rate = (wins / matches) if matches > 0 else 0
+            
+            results.append({
+                "answer": ans,
+                "wins": wins,
+                "matches": matches,
+                "win_rate": win_rate
+            })
+            
+        results.sort(key=lambda x: x["win_rate"], reverse=True)
+        for i, res in enumerate(results):
+            res["rank"] = i + 1
+            
+        # ArchivePost 연동 데이터 조회
+        if card.linked_post_id:
+            original_post = await ArchivePost.get(ObjectId(card.linked_post_id))
+            if original_post:
+                golden_data = GoldenDataset(
+                    raw_prompt=original_post.raw_prompt,
+                    original_ai_answer=original_post.original_ai_answer,
+                    ranked_answers=results,
+                    domain_category=str(original_post.domain_category),
+                    tags=original_post.tags,
+                    total_matches_played=card.total_matches
+                )
+                await golden_data.insert()
+                card.is_migrated = True
+
+    await card.save()
+
+    # 응답 로그 기록
+    response_log = CardResponse(
+        user_id=user.uid,
+        card_id=card_id,
+        answer=chosen_answer,
+        is_correct=True,
+        reward_exp=exp_gained,
+        reward_gold=gold_gained,
+        reward_trust=trust_gained,
+    )
+    await response_log.insert()
+
+    return {
+        "success": True,
+        "isCorrect": True,
+        "rewardExp": exp_gained,
+        "rewardGold": gold_gained,
+        "rewardTrust": trust_gained,
+        "message": f"투표가 반영되었습니다. (영향력: {voting_weight}점)"
+    }

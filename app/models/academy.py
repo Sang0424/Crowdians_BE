@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from beanie import Document
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 
 class KnowledgeCard(Document):
@@ -17,6 +17,12 @@ class KnowledgeCard(Document):
     honeypot_answer: str = Field(default="", description="매크로/어뷰징 유저를 걸러내기 위한 함정 오답")
     trust_count: int = 0            # 투표 수/신뢰도 (10 이상 시 골든 데이터셋 편입 등)
     priority: int = 0               # 큐에서의 노출 우선순위 (SOS 게시글 등)
+
+    # 🌟 [추가] 마이그레이션 및 A/B 테스트 통계 필드
+    is_migrated: bool = Field(default=False, description="골든 데이터셋으로 추출 완료되었는지 여부")
+    total_matches: int = 0          # 총 A/B 매치 진행 횟수
+    choice_wins: dict[str, int] = Field(default_factory=dict, description="답변별 가중 승리 횟수")
+    choice_matches: dict[str, int] = Field(default_factory=dict, description="답변별 노출(매치) 횟수")
     
     # RLHF나 특정 출처가 있다면 기록
     source_message_id: str | None = None
