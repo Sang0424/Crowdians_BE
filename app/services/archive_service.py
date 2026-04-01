@@ -5,7 +5,7 @@ from beanie import PydanticObjectId
 from fastapi import HTTPException, status
 
 from app.models.user import User
-from app.models.archive import ArchivePost, ArchiveAnswer
+from app.models.archive import ArchivePost, ArchiveAnswer, DomainCategory
 from app.models.academy import KnowledgeCard
 
 
@@ -13,7 +13,20 @@ from app.db.repository.archive_repository import archive_repo, archive_answer_re
 from app.services.mailbox_service import send_system_mail
 
 
-async def create_archive_post(user: User, title: str, content: str, is_sos: bool = False, category: str = "general", locale: str = "ko", target_user_id: str = None, summary: str = "", tags: list[str] = None) -> str:
+async def create_archive_post(
+    user: User, 
+    title: str, 
+    content: str, 
+    is_sos: bool = False, 
+    category: str = "general", 
+    locale: str = "ko", 
+    target_user_id: str = None, 
+    summary: str = "", 
+    tags: list[str] = None,
+    raw_prompt: str = "",
+    original_ai_answer: str = "",
+    domain_category: DomainCategory = DomainCategory.ETC
+) -> str:
     """새로운 지식 도서관 질문을 등록합니다."""
     # 직접 의뢰(Direct Commission)인 경우 상태를 'commissioned'로 설정
     status = "commissioned" if target_user_id else "open"
@@ -30,6 +43,9 @@ async def create_archive_post(user: User, title: str, content: str, is_sos: bool
         "status": status,
         "summary": summary,
         "tags": tags or [],
+        "raw_prompt": raw_prompt,
+        "original_ai_answer": original_ai_answer,
+        "domain_category": domain_category,
     })
     
     # 직접 의뢰인 경우 대상 유저에게 알림 메일 발송

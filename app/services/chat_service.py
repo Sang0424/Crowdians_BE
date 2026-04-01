@@ -8,6 +8,11 @@ from google.genai import types
 from app.core.config import settings
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.user import User
+from app.models.archive import DomainCategory
+from pydantic import BaseModel, Field
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
 
 # Gemini 클라이언트 초기화
 # 환경변수나 설정에서 GEMINI_API_KEY를 가져옵니다.
@@ -37,6 +42,7 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     사용자인 '{nickname}'(이)와 대화하고 있어. 
     너는 인간에 대해 궁금증이 많고 호기심이 많아. 
     세상에 나온지 얼마되지 않아 처음에는 미숙하지만 대화를 통해 점점 많은 것들을 학습하고 있어.
+    너의 목표는 사용자와 대화하며 인간을 이해하고, 인간에게 유용한 정보를 제공하는 것이야.
     """
     
     # 공통 규칙: 지식이 완전히 완벽하지 않은 척하며 사용자에게 되묻기
@@ -45,6 +51,7 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     - '{nickname}'의 질문에 대해 네가 아는 선에서 대답하고 모르는 내용은 솔직하게 모른다고 답해.
     - 최대한 핵심적인 내용만을 말하고 부가설명은 하지마.
     - 답변은 3문장을 넘기지 마.
+    - 메신저로 연락하는 것과 같이 답변해줘.
     - 읽기 좋게 적절한 위치에서 줄바꿈(\n)을 적극적으로 사용해줘.
     [언어 설정 (가장 중요 ⭐)]
     - 가장 우선적으로 사용자의 질문언어에 맞춰서 답변해.
@@ -356,3 +363,53 @@ async def send_guest_chat_message(
         "intimacyGained": 0,
         "requiresLogin": False
     }
+
+# ── [NEW] LangChain 기반 메타데이터 추출 ──
+
+class ArchiveMetadata(BaseModel):
+    title: str = Field(description="질문의 핵심을 요약한 15자 내외의 짧은 제목")
+    summary: str = Field(description="질문과 상황에 대한 1~2줄 요약")
+    tags: list[str] = Field(description="검색용 키워드 3~5개")
+    domain_category: DomainCategory = Field(description="제공된 DomainCategory 중 가장 적합한 대분류 1개 선택")
+
+async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: str) -> dict:
+    """유저의 질문과 AI의 오답을 분석하여 분류 메타데이터를 추출합니다."""
+    
+    # LangChain 용 Gemini 모델 초기화 (안정적인 JSON 추출)
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-3.1-flash-lite-preview", 
+        temperature=0.1,
+        google_api_key=settings.GEMINI_API_KEY
+    )
+    parser = JsonOutputParser(pydantic_object=ArchiveMetadata)
+    
+    prompt = PromptTemplate(
+        template="""당신은 AI 학습용 데이터셋을 분류하는 어노테이터입니다.
+        유저가 아래의 질문을 했고, AI가 오답을 냈습니다. 
+        이 상황을 분석하여 가장 적합한 카테고리와 메타데이터를 추출하세요.
+        
+        [유저 질문 원본]: {raw_prompt}
+        [AI 답변 원본]: {original_ai_answer}
+        
+        {format_instructions}""",
+        input_variables=["raw_prompt", "original_ai_answer"],
+        partial_variables={"format_instructions": parser.get_format_instructions()}
+    )
+    
+    chain = prompt | llm | parser
+    
+    try:
+        result = await chain.ainvoke({
+            "raw_prompt": raw_prompt,
+            "original_ai_answer": original_ai_answer
+        })
+        return result
+    except Exception as e:
+        print(f"LangChain Metadata Extraction Failed: {e}")
+        # 실패 시 기본값 반환
+        return {
+            "title": "알 수 없는 질문",
+            "summary": "메타데이터 추출에 실패했습니다.",
+            "tags": ["error"],
+            "domain_category": DomainCategory.ETC
+        }

@@ -2,8 +2,18 @@
 
 from datetime import datetime, timezone
 
+from enum import Enum
 from beanie import Document
 from pydantic import BaseModel, Field
+
+
+class DomainCategory(str, Enum):
+    IT_PROGRAMMING = "IT/프로그래밍"
+    LAW_TAX = "법률/세무"
+    SCIENCE_TECH = "과학/기술"
+    DAILY_LIFE = "일상/생활"
+    CREATIVE_WRITING = "창작/글쓰기"
+    ETC = "기타"
 
 
 class ArchiveAnswer(BaseModel):
@@ -30,6 +40,11 @@ class ArchivePost(Document):
     
     tags: list[str] = Field(default_factory=list) # LLM 추출 태그
     summary: str = ""                            # LLM 3줄 요약
+    
+    # 🌟 [추가] 골든 데이터셋을 위한 원본 보존 및 메타데이터 필드
+    raw_prompt: str = Field(default="", description="유저가 입력한 최초 질문 원본")
+    original_ai_answer: str = Field(default="", description="불만족 평가를 받은 AI의 최초 오답 원본")
+    domain_category: DomainCategory = Field(default=DomainCategory.ETC, description="데이터 판매용 대분류")
     
     # 답변들의 ID 목록 (ArchiveAnswer Document의 id)
     # 또는 역방향 참조를 위해 안 들고 있어도 무방합니다. (보통 RDBMS처럼)

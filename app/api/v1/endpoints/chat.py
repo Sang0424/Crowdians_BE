@@ -22,7 +22,9 @@ from app.services.chat_service import (
     get_or_create_conversation,
     generate_summary_for_archive,
     send_guest_chat_message,
+    extract_metadata_with_langchain,
 )
+from app.models.archive import DomainCategory
 from app.services.archive_service import create_archive_post
 from app.core.exceptions import InsufficientResourceError
 
@@ -174,26 +176,49 @@ async def unlike_message(
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
 ):
-    # Todo: Move to chat service completely? Currently fine as it composes two service calls.
-    title, content, summary, tags = await generate_summary_for_archive(
-        uid=current_user.uid,
-        text_context=f"불만족 답변(인덱스 {request.messageIndex}) 내역을 바탕으로 더 나은 답변을 위한 질문 작성",
-        is_sos=False
-    )
+    # 1. 기존 대화 내역에서 '유저의 질문(raw_prompt)'과 'AI의 답변(original_ai_answer)'을 찾아냄
+    conv = await get_or_create_conversation(current_user.uid)
     
+    # 인덱스 바운더리 체크
+    if request.messageIndex < 1 or request.messageIndex >= len(conv.messages):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="유효하지 않은 메시지 인덱스입니다."
+        )
+    
+    # request.messageIndex를 기반으로 해당 답변과 그 직전의 질문을 가져옴
+    target_ai_msg = conv.messages[request.messageIndex]
+    target_user_msg = conv.messages[request.messageIndex - 1] 
+    
+    # 역할 확인 (보통 유저 질문 뒤에 모델 답변이 옴)
+    if target_ai_msg.role != "model" or target_user_msg.role != "user":
+        # 만약 인덱스가 꼬였다면 탐색 로직이 필요할 수 있으나, 일단은 인덱스 기반으로 처리
+        raw_prompt = target_user_msg.content
+        original_ai_answer = target_ai_msg.content
+    else:
+        raw_prompt = target_user_msg.content
+        original_ai_answer = target_ai_msg.content
+
+    # 2. 기존의 텍스트 기반 generate_summary_for_archive 대신 LangChain 함수 호출
+    metadata = await extract_metadata_with_langchain(raw_prompt, original_ai_answer)
+    
+    # 3. 추출된 데이터와 '원본 데이터'를 모두 담아서 ArchivePost 생성
     post_id = await create_archive_post(
         user=current_user,
-        title=title,
-        content=content,
+        title=metadata.get("title", "불만족 답변 신고"),
+        content=raw_prompt,           # 아카데미에 보여줄 본문은 가공 없이 질문 원본 그대로 사용
         category="qna",
         is_sos=False,
-        summary=summary,
-        tags=tags
+        summary=metadata.get("summary", ""),
+        tags=metadata.get("tags", []),
+        raw_prompt=raw_prompt,                  # 🌟 원본 저장
+        original_ai_answer=original_ai_answer,  # 🌟 원본 저장
+        domain_category=metadata.get("domain_category", DomainCategory.ETC) # 🌟 분류 저장
     )
     
     return ChatUnlikeResponse(
         success=True,
-        message=f"답변(인덱스 {request.messageIndex})이 신고되었습니다. 더 똑똑한 AI로 학습시키겠습니다.",
+        message="답변이 신고되었습니다. 더 똑똑한 AI로 학습시키겠습니다.",
     )
 
 
