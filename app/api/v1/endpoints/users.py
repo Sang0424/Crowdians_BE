@@ -12,8 +12,9 @@ from app.schemas.user import (
     UserActivitiesResponse,
     DeleteAccountResponse,
     GuestStatsSyncRequest,
-    NicknameUpdateRequest,
     CharacterTypeUpdateRequest,
+    NicknameUpdateRequest,
+    TitleUpdateRequest,
 )
 from app.services.user_service import (
     get_user_by_uid,
@@ -22,6 +23,7 @@ from app.services.user_service import (
     sync_guest_stats as sync_guest_stats_service,
     check_daily_reset
 )
+from app.services.donation_service import DonationService
 
 router = APIRouter()
 
@@ -49,6 +51,7 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             isOnboardingDone=user.stats.is_onboarding_done,
             learningTickets=user.stats.learning_tickets,
             maxLearningTickets=user.stats.max_learning_tickets,
+            title=user.title,
         ),
         character=CharacterResponse(
             type=user.character.type,
@@ -61,7 +64,10 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             unlockedParts=user.character.unlocked_parts,
         ),
         createdAt=user.created_at,
-        title = user.title
+        title=user.title,
+        donationTier=user.donation_tier,
+        totalDonated=user.total_donated,
+        availableTitles=user.available_titles,
     )
 
 # ══════════════════════════════════════
@@ -293,5 +299,29 @@ async def update_nickname(
 ):
     current_user.nickname = request.nickname
     await current_user.save()
+    
+    return _user_to_profile(current_user)
+
+
+# ══════════════════════════════════════
+# PATCH /users/me/title — 캐릭터 칭호 변경
+# ══════════════════════════════════════
+
+@router.patch(
+    "/users/me/title",
+    response_model=UserProfileResponse,
+    summary="칭호 변경",
+    description="해금된 칭호 중 하나로 캐릭터 칭호를 변경합니다.",
+)
+async def update_title(
+    request: TitleUpdateRequest,
+    current_user: CurrentUser,
+):
+    success = await DonationService.update_user_title(current_user, request.title)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="해금되지 않았거나 유효하지 않은 칭호입니다."
+        )
     
     return _user_to_profile(current_user)

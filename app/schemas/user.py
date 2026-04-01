@@ -24,6 +24,7 @@ class UserStatsResponse(BaseModel):
     isOnboardingDone: bool
     learningTickets: int
     maxLearningTickets: int
+    title: Optional[str] = ""
 
 class GuestStatsSyncRequest(BaseModel):
     exp_gained: int
@@ -53,7 +54,10 @@ class UserProfileResponse(BaseModel):
     stats: UserStatsResponse
     character: CharacterResponse
     createdAt: datetime
-    title: str | None
+    title: Optional[str] = ""
+    donationTier: str
+    totalDonated: float
+    availableTitles: List[str]
 
 
 # ── 유저 활동 탭 ──
@@ -94,3 +98,8 @@ class CharacterTypeUpdateRequest(BaseModel):
 class NicknameUpdateRequest(BaseModel):
     """닉네임 업데이트 요청"""
     nickname: str
+
+
+class TitleUpdateRequest(BaseModel):
+    """칭호 업데이트 요청"""
+    title: str

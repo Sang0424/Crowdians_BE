@@ -76,6 +76,11 @@ class User(Document):
     stats: UserStats = Field(default_factory=UserStats)
     character: CharacterInfo = Field(default_factory=CharacterInfo)
 
+    # ── Donation & Titles ──
+    donation_tier: str = "none"                # "none" | "pioneer" | "explorer" | "guardian"
+    total_donated: float = 0.0                 # 누적 후원 금액 (USD 기준)
+    available_titles: list[str] = []           # 해금된 칭호 목록 (pioneer, explorer, guardian)
+
     role: str = "user"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

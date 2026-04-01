@@ -9,6 +9,7 @@ from app.models.chat import ChatConversation
 from app.models.academy import KnowledgeCard, CardResponse
 from app.models.archive import ArchivePost, ArchiveAnswer
 from app.models.adventure import AdventureSession
+from app.models.donation import Donation
 from app.models.mailbox import Mail
 from app.models.report import Report
 from app.models.quest import Quest, UserQuestBookmark
@@ -17,7 +18,7 @@ from app.models.quest import Quest, UserQuestBookmark
 DOCUMENT_MODELS = [
     User, ChatConversation, KnowledgeCard, CardResponse, 
     ArchivePost, ArchiveAnswer, AdventureSession, Mail, Report,
-    Quest, UserQuestBookmark
+    Quest, UserQuestBookmark, Donation
 ]
 
 
