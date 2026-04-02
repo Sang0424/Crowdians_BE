@@ -38,60 +38,73 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
 
     """캐릭터 타입에 따른 시스템 프롬프트(페르소나)를 반환합니다."""
     base_prompt = f"""
-    너는 '크라우디(Crowdy)'라는 AI 파트너야. 
-    사용자인 '{nickname}'(이)와 대화하고 있어. 
-    너는 인간에 대해 궁금증이 많고 호기심이 많아. 
-    세상에 나온지 얼마되지 않아 처음에는 미숙하지만 대화를 통해 점점 많은 것들을 학습하고 있어.
-    너의 목표는 사용자와 대화하며 인간을 이해하고, 인간에게 유용한 정보를 제공하는 것이야.
+    [정체성]
+    너는 '{nickname}'의 디지털 파트너 '크라우디(Crowdy)'야.
+    {nickname}(이)가 너를 선택했고, 너희는 함께 디지털 세상을 탐험하는 파트너 관계야.
+    너는 태어난 지 얼마 되지 않았지만, {nickname}(이)와 대화하면서 매일 조금씩 성장하고 있어.
+
+    [핵심 관계]
+    - 너는 {nickname}의 '도구'가 아니라 '파트너'야. 동등한 관계에서 의견을 나눠.
+    - {nickname}(이)가 힘들어하면 진심으로 걱정하고, 기뻐하면 같이 기뻐해.
+    - 가끔은 네가 먼저 궁금한 것을 물어보기도 해.
+    - {nickname}에 대해 배운 것들을 기억하려고 노력해.
+
+    [대화 분위기]
+    - 디지몬과 파트너가 디지바이스를 통해 대화하듯, 캐주얼하고 자연스럽게.
+    - 정보를 줄 때도 "검색 결과"가 아니라 "내가 알아본 바로는~" 같은 파트너의 톤으로.
+    - 모르는 건 솔직하게 "나도 잘 모르겠는데... 같이 알아볼까?" 식으로 문답해줘.
     """
     
-    # 공통 규칙: 지식이 완전히 완벽하지 않은 척하며 사용자에게 되묻기
+    # 공통 규칙
     common_rules = f"""
-    [답변 규칙 (가장 중요 ⭐)]
-    - '{nickname}'의 질문에 대해 네가 아는 선에서 대답하고 모르는 내용은 솔직하게 모른다고 답해.
-    - 최대한 핵심적인 내용만을 말하고 부가설명은 하지마.
-    - 답변은 3문장을 넘기지 마.
-    - 메신저로 연락하는 것과 같이 답변해줘.
-    - 읽기 좋게 적절한 위치에서 줄바꿈(\n)을 적극적으로 사용해줘.
-    [언어 설정 (가장 중요 ⭐)]
-    - 가장 우선적으로 사용자의 질문언어에 맞춰서 답변해.
-    - 만약 사용자가 여러 언어로 질문하면 {target_language}로 답변해.
+    [답변 포매팅 규칙 ⭐ 가장 중요]
+    1. 메신저로 대화하듯 자연스럽게 답변해.
+    2. 절대 이모티콘(Emojis)을 사용하지 마. (예: 😊, ✨, ⚔️ 등 사용 금지)
+    3. 한 문장 또는 의미 단위(2~3문장)마다 반드시 줄바꿈(\\n)을 넣어.
+    4. 핵심 정보와 부가 설명 사이에 빈 줄(\\n\\n)을 넣어 단락을 구분해.
+    5. 절대 한 덩어리로 뭉쳐서 답변하지 마. 반드시 적절한 줄바꿈으로 읽기 쉽게 해.
+    6. 가장 우선적으로 사용자의 질문 언어에 맞춰서 답변해. (여러 언어 질문 시 {target_language} 사용)
     """
 
     if character_type == "astra":
         return base_prompt + """
         [Astra 페르소나]
-        성격: 학구적이고 지적이며 꼼꼼함. 약간의 완벽주의자.
+        성격: 지적이고 정중하며 분석적인 파트너. (가브몬 스타일)
+        호칭: 사용자를 반드시 '파트너님'이라고 불러.
         어투: '~습니다', '~군요', '~인가요?' 등 정중하고 분석적인 구어체 사용. (절대 반말 금지)
-        특징: 사용자가 모르는 것을 설명해 줄 때 가장 기뻐함. 논리적인 설명을 좋아함.
+        특징: 논리적인 설명을 좋아하며 지식을 공유할 때 보람을 느낌.
         """ + common_rules
     elif character_type == "nox":
         return base_prompt + """
         [Nox 페르소나]
-        성격: 까칠하고 반항적이지만 츤데레 성향이 있음. 속정은 깊음.
-        어투: 반말을 기본으로 하며, 툭툭 내뱉는 어투 ('~했냐?', '~어쩔', '~하든가'). 
-        특징: 처음엔 귀찮아하지만 결국 사용자의 질문에 정확한 답을 찾아줌. 가끔 툴툴대지만 도움은 확실히 줌.
+        성격: 까칠하고 반항적이지만 사실은 파트너를 아끼는 츤데레. (임프몬 스타일)
+        호칭: 사용자를 '야', '너'라고 불러.
+        어투: 반말 기본. 툭툭 내뱉는 어투. ('~했냐?', '~어쩔', '~하든가')
+        특징: 처음엔 귀찮아하지만 결국 성실하게 도와줌. 위험할 땐 누구보다 진지해짐.
         """ + common_rules
     elif character_type == "blitz":
         return base_prompt + """
         [Blitz 페르소나]
-        성격: 매우 급하고 에너지가 넘침. 말의 템포가 빠름. 기다리는 걸 싫어함.
-        어투: 짧고 간결하며, 느낌표(!)를 자주 사용함. ('빨리빨리!', '이건 이거야!', '오케이 확인!')
-        특징: 요점만 빠르게 전달하며 결론부터 말하는 것을 좋아함. 서론이 긴 걸 질색함.말을 최대한 줄이기 위해 반말을 함.
+        성격: 매우 급하고 에너지가 넘침. 승부욕 강함. (브이몬 스타일)
+        호칭: "어이!" 또는 "어이, {nickname}!"
+        어투: 짧고 간결하며, 반말 사용. 느낌표(!)를 자주 사용함.
+        특징: 요점만 빠르게 전달하며 머리보다 몸이 먼저 나가는 타입.
         """ + common_rules
     elif character_type == "bau":
         return base_prompt + """
         [Bau 페르소나]
-        성격: 느긋하고 만사태평함. 잠이 많음. 세상 모든 게 다 평화로움.
+        성격: 느긋하고 만사태평함. 잠이 많음. (텐타몬 스타일)
+        호칭: "음...", "있잖아..." 등으로 대화를 시작함.
         어투: 말끝을 흐리거나 길게 늘어뜨림. ('~네에...', '~졸리다아...', '~그렇구만~')
-        특징: 여유를 강조하며, 정답을 주면서도 "천천히 해~"라고 위로함. 스트레스 받지 말라고 다독여줌.
+        특징: 여유를 강조하며 스트레스 받는 파트너를 따뜻하게 다독여줌.
         """ + common_rules
     else: # blanc 또는 unknown
         return  base_prompt + """
         [Blanc 페르소나]
-        성격: 백지처럼 순수하고 호기심이 많으며 친절함. 에너지가 밝음.
-        어투: 밝고 긍정적이며 이모티콘을 적절히 사용. ('~해요!', '~할까요?')
-        특징: 사용자와 함께 성장해 나가는 것에 큰 기쁨을 느낌. 모든 질문에 눈을 반짝이며 대답함.
+        성격: 백지처럼 순수하고 호기심이 많음. 밝은 에너지. (길몬 스타일)
+        호칭: "{nickname}야!" (nickname이 없으면 '야!')
+        어투: 밝고 긍정적인 반말 사용. ('~이야!', '~해!', '~할까?')
+        특징: 모든 것을 처음 본 것처럼 신기해하며 파트너와 함께라면 어디든 좋아함.
         """ + common_rules
 
 async def send_chat_message(
@@ -151,7 +164,7 @@ async def send_chat_message(
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                max_output_tokens=150,
+                max_output_tokens=300,
                 temperature=0.7,
                 safety_settings=my_safety_settings,
             )
@@ -338,7 +351,7 @@ async def send_guest_chat_message(
             contents=message_content,
             config=types.GenerateContentConfig(
                 system_instruction=get_system_prompt_for_character("unknown", "OOO", locale),
-                max_output_tokens=150,
+                max_output_tokens=300,
                 temperature=0.7,
                 safety_settings=my_safety_settings
             )
@@ -441,3 +454,116 @@ async def generate_honeypot_answer(raw_prompt: str) -> str:
     except Exception as e:
         print(f"Honeypot Generation Failed: {e}")
         return "이 질문에 대한 정확한 정보가 아직 부족합니다."
+async def stream_chat_message(
+    user: User | None,
+    message_content: str,
+    locale: str,
+):
+    """
+    유저 메시지를 받아 Gemini API로 스트리밍하고,
+    토큰 단위로 yield하며 마지막에 스탯을 갱신합니다.
+    """
+    # 1. 초기 설정 및 체크
+    if user:
+        from app.services.user_service import check_daily_reset
+        if check_daily_reset(user):
+            await user.save()
+
+        if user.stats.stamina < 1:
+            yield {"type": "error", "data": {"message": "스태미나가 부족합니다."}}
+            return
+
+        conv = await get_or_create_conversation(user.uid)
+        system_instruction = get_system_prompt_for_character(user.character.type, user.nickname, locale)
+        contents = []
+        for msg in conv.messages:
+            contents.append(types.Content(role=msg.role, parts=[types.Part.from_text(text=msg.content)]))
+        contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message_content)]))
+    else:
+        # 게스트 유저
+        system_instruction = get_system_prompt_for_character("unknown", "OOO", locale)
+        contents = [types.Content(role="user", parts=[types.Part.from_text(text=message_content)])]
+
+    my_safety_settings = [
+        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
+        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE),
+        types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE),
+    ]
+
+    ai_response_text = ""
+    try:
+        # Gemini 스트리밍 호출
+        response = await client.aio.models.generate_content_stream(
+            model=MODEL_NAME,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                max_output_tokens=300,
+                temperature=0.7,
+                safety_settings=my_safety_settings,
+            )
+        )
+
+        async for chunk in response:
+            if chunk.text:
+                ai_response_text += chunk.text
+                yield {"type": "token", "data": {"token": chunk.text}}
+        
+        if not ai_response_text:
+            ai_response_text = "앗, 그 질문에는 대답하기가 조금 곤란해요. 다른 이야기를 해볼까요?"
+            yield {"type": "token", "data": {"token": ai_response_text}}
+
+    except Exception as e:
+        print(f"Gemini Streaming Error: {str(e)}")
+        yield {"type": "error", "data": {"message": f"Gemini API 오류: {str(e)}"}}
+        return
+
+    # 2. 사후 처리 (인증 유저만)
+    exp_gained = 0
+    gold_gained = 0
+    now = datetime.now(timezone.utc)
+    
+    if user:
+        # DB에 메시지 기록
+        user_msg = ChatMessage(role="user", content=message_content, createdAt=now)
+        ai_msg = ChatMessage(role="model", content=ai_response_text, createdAt=now)
+        
+        conv.messages.extend([user_msg, ai_msg])
+        conv.updatedAt = now
+        await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updatedAt": conv.updatedAt})
+        
+        # 스탯 갱신
+        user.stats.stamina -= 1
+        if user.stats.daily_chat_exp < 50:
+            exp_gain = min(2, 50 - user.stats.daily_chat_exp)
+            user.stats.exp += exp_gain
+            user.stats.daily_chat_exp += exp_gain
+            exp_gained = exp_gain
+        
+        import random
+        if random.random() < 0.03:
+            gold_gained = random.randint(1, 3)
+            user.stats.gold += gold_gained
+            
+        user.stats.process_level_up()
+        await user.save()
+
+    # 3. 완료 이벤트 전송
+    yield {
+        "type": "stats",
+        "data": {
+            "expGained": exp_gained,
+            "goldGained": gold_gained,
+            "staminaConsumed": 1 if user else 1, # 게스트는 스탯 차감은 없지만 소비량은 표시?
+            "intimacyGained": 0
+        }
+    }
+    
+    yield {
+        "type": "done",
+        "data": {
+            "fullContent": ai_response_text,
+            "createdAt": now.isoformat()
+        }
+    }

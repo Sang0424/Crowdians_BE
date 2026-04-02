@@ -1,6 +1,9 @@
 # app/api/v1/endpoints/chat.py
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, BackgroundTasks
+from fastapi.responses import StreamingResponse
+import json
+import asyncio
 
 from app.core.security import CurrentUser, get_current_user_optional, CurrentUser, CurrentUserOptional
 from app.models.chat import ChatConversation
@@ -17,6 +20,7 @@ from app.schemas.chat import (
 )
 from app.services.chat_service import (
     send_chat_message,
+    stream_chat_message,
     clear_chat_history,
     delete_chat_message,
     get_or_create_conversation,
@@ -62,6 +66,36 @@ async def send_message(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         )
+
+@router.post(
+    "/chat/message/stream",
+    summary="채팅 메시지 스트리밍 전송",
+    description="AI에게 메시지를 전송하고 SSE(Server-Sent Events)를 통해 실시간으로 응답을 받아옵니다.",
+)
+async def send_message_stream(
+    request: ChatMessageRequest,
+    current_user: CurrentUserOptional,
+):
+    """
+    SSE를 통한 스트리밍 답변 전송 엔드포인트
+    """
+    async def event_generator():
+        try:
+            async for event in stream_chat_message(current_user, request.content, request.locale):
+                yield f"event: {event['type']}\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
+        except Exception as e:
+            error_data = {"message": f"Streaming internal error: {str(e)}"}
+            yield f"event: error\ndata: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no", # Nginx 등 프록시에서 버퍼링되는 것을 방지
+        }
+    )
 
 @router.post("/chat/guest-message", response_model=ChatSendResponse, summary="게스트 채팅 메시지 전송", description="AI에게 메시지를 전송하고 스탯(Stamina, EXP 등)을 계산하여 응답합니다.")
 async def send_guest_message(
