@@ -13,7 +13,6 @@ def check_daily_reset(user: User) -> bool:
     
     if user.stats.last_daily_reset != today_str:
         user.stats.learning_tickets = user.stats.max_learning_tickets
-        user.stats.ticket_recharges_today = 0
         user.stats.daily_chat_exp = 0
         user.stats.stamina = user.stats.max_stamina
         user.stats.last_daily_reset = today_str

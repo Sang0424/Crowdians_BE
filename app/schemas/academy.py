@@ -31,9 +31,3 @@ class CardRejectResponse(BaseModel):
     success: bool
     message: str
 
-
-class TicketRechargeResponse(BaseModel):
-    success: bool
-    ticketsRemaining: int
-    rechargesToday: int
-    message: str

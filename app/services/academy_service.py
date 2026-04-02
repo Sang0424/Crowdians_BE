@@ -81,7 +81,7 @@ async def start_academy_session(user: User) -> dict:
         await user.save()
         
     if user.stats.learning_tickets <= 0:
-        raise ValueError("남은 학습 티켓이 없습니다. 광고 충전이 필요합니다.")
+        raise ValueError("남은 학습 티켓이 없습니다. 내일 다시 시도해 주세요.")
 
     if user.stats.trust < 100:
         raise ValueError("신뢰도가 낮아 학습을 진행할 수 없습니다.")

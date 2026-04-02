@@ -63,14 +63,14 @@ class DonationService:
         new_titles = []
         new_tier = user.donation_tier
         
-        if user.total_donated >= 50.0:
+        if user.total_donated >= 20.0:
             new_tier = "guardian"
             new_titles = ["pioneer", "explorer", "guardian"]
         elif user.total_donated >= 10.0:
             if new_tier != "guardian":
                 new_tier = "explorer"
             new_titles = ["pioneer", "explorer"]
-        elif user.total_donated >= 1.0:
+        elif user.total_donated >= 5.0:
             if new_tier not in ["explorer", "guardian"]:
                 new_tier = "pioneer"
             new_titles = ["pioneer"]

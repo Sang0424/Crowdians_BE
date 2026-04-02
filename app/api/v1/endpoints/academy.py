@@ -9,7 +9,6 @@ from app.schemas.academy import (
     CardSubmitRequest,
     CardSubmitResponse,
     CardRejectResponse,
-    TicketRechargeResponse,
     StartSessionResponse
 )
 from app.services.academy_service import (

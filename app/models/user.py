@@ -19,7 +19,6 @@ class UserStats(BaseModel):
     intimacy: int = 0             # 친밀도
     daily_chat_exp: int = 0       # 오늘 채팅 EXP (일일 상한 50)
     learning_tickets: int = 3      # 오늘 남은 아카데미 티켓 수
-    ticket_recharges_today: int = 0 # 오늘 광고로 충전한 티켓 수 (최대 5)
     daily_pet_count: int = 0       # 오늘 쓰다듬은 횟수 (일일 상한 30)
     last_pet_date: Optional[datetime] = None # 마지막으로 쓰다듬은 날짜
     last_daily_reset: str = ""    # 마지막 일일 초기화 날짜 (YYYY-MM-DD 포맷)
