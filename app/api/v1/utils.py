@@ -28,8 +28,12 @@ def user_to_response(user: User) -> UserResponse:
             courage=user.stats.courage,
             intimacy=user.stats.intimacy,
             dailyChatExp=user.stats.daily_chat_exp,
+            dailyPetCount=user.stats.daily_pet_count,
+            dailySosCount=user.stats.daily_sos_count,
+            dailyCommissionCount=user.stats.daily_commission_count,
             isOnboardingDone=user.stats.is_onboarding_done,
             learningTickets=user.stats.learning_tickets,
+            maxLearningTickets=user.stats.max_learning_tickets,
         ),
         character=CharacterResponse(
             type=user.character.type,

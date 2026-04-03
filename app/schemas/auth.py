@@ -20,8 +20,12 @@ class UserStatsResponse(BaseModel):
     courage: int
     intimacy: int
     dailyChatExp: int
+    dailyPetCount: int
+    dailySosCount: int
+    dailyCommissionCount: int
     isOnboardingDone: bool
     learningTickets: int
+    maxLearningTickets: int
 
 
 class EquippedPartsResponse(BaseModel):

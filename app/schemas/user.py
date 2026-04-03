@@ -21,6 +21,8 @@ class UserStatsResponse(BaseModel):
     intimacy: int
     dailyChatExp: int
     dailyPetCount: int
+    dailySosCount: int
+    dailyCommissionCount: int
     isOnboardingDone: bool
     learningTickets: int
     maxLearningTickets: int
@@ -55,9 +57,8 @@ class UserProfileResponse(BaseModel):
     character: CharacterResponse
     createdAt: datetime
     title: Optional[str] = ""
-    donationTier: str
-    totalDonated: float
-    availableTitles: List[str]
+    subscriptionPlan: str
+    subscriptionExpiresAt: Optional[datetime] = None
 
 
 # ── 유저 활동 탭 ──

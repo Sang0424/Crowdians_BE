@@ -62,8 +62,19 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
     # 다양한 노출을 위해 섞어줌
     random.shuffle(total_cards)
 
-    return [
-        {
+    # ── 각 카드별 연동 포스트의 chat_context 추가 ──
+    from app.models.archive import ArchivePost
+    from bson import ObjectId
+
+    card_list = []
+    for c in total_cards:
+        chat_context = []
+        if c.linked_post_id:
+            post = await ArchivePost.get(ObjectId(c.linked_post_id))
+            if post and post.chat_context:
+                chat_context = [m.model_dump() for m in post.chat_context]
+        
+        card_list.append({
             "id": str(c.id),
             "type": c.type,
             "question": c.question,
@@ -71,9 +82,10 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
             "summary": c.summary or "",
             "choices": c.choices,
             "linked_post_id": c.linked_post_id,
-        }
-        for c in total_cards
-    ]
+            "chat_context": chat_context
+        })
+
+    return card_list
 
 
 async def start_academy_session(user: User) -> dict:
@@ -337,6 +349,7 @@ async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_
                 golden_data = GoldenDataset(
                     raw_prompt=original_post.raw_prompt,
                     original_ai_answer=original_post.original_ai_answer,
+                    chat_context=[m.model_dump() for m in original_post.chat_context],
                     ranked_answers=results,
                     domain_category=str(original_post.domain_category),
                     tags=original_post.tags,

@@ -19,6 +19,8 @@ class UserStats(BaseModel):
     intimacy: int = 0             # 친밀도
     daily_chat_exp: int = 0       # 오늘 채팅 EXP (일일 상한 50)
     learning_tickets: int = 3      # 오늘 남은 아카데미 티켓 수
+    daily_sos_count: int = 0       # 오늘 SOS 요청 횟수 (무료 3회)
+    daily_commission_count: int = 0 # 오늘 지정 질문 횟수 (무료 1회)
     daily_pet_count: int = 0       # 오늘 쓰다듬은 횟수 (일일 상한 30)
     last_pet_date: Optional[datetime] = None # 마지막으로 쓰다듬은 날짜
     last_daily_reset: str = ""    # 마지막 일일 초기화 날짜 (YYYY-MM-DD 포맷)
@@ -40,12 +42,15 @@ class UserStats(BaseModel):
         """최대 아카데미 티켓 수: 3 + (신뢰도 // 200)"""
         return 3 + (self.trust - 1000) // 200
 
-    def process_level_up(self):
+    def process_level_up(self, is_premium: bool = False):
         """경험치가 넘칠 경우 레벨업을 반복 처리(while)하고 스태미나를 완충합니다."""
         while self.exp >= self.max_exp:
             self.exp -= self.max_exp
             self.level += 1
-            self.stamina = self.max_stamina
+            if not is_premium:
+                self.stamina = self.max_stamina
+            else:
+                self.stamina = 999 # 프리미엄은 사실상 무제한
 
 
 class EquippedParts(BaseModel):
@@ -75,10 +80,11 @@ class User(Document):
     stats: UserStats = Field(default_factory=UserStats)
     character: CharacterInfo = Field(default_factory=CharacterInfo)
 
-    # ── Donation & Titles ──
-    donation_tier: str = "none"                # "none" | "pioneer" | "explorer" | "guardian"
-    total_donated: float = 0.0                 # 누적 후원 금액 (USD 기준)
-    available_titles: list[str] = []           # 해금된 칭호 목록 (pioneer, explorer, guardian)
+    # ── Subscription ──
+    subscription_plan: str = "free"            # "free" | "premium"
+    subscription_expires_at: Optional[datetime] = None
+    lemonsqueezy_customer_id: Optional[str] = None
+    lemonsqueezy_subscription_id: Optional[str] = None
 
     role: str = "user"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

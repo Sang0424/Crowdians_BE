@@ -24,13 +24,15 @@ from app.services.chat_service import (
     clear_chat_history,
     delete_chat_message,
     get_or_create_conversation,
-    generate_summary_for_archive,
-    send_guest_chat_message,
     extract_metadata_with_langchain,
 )
+from app.services.archive_service import (
+    process_archive_task_background,
+    create_archive_post
+)
 from app.models.archive import DomainCategory
-from app.services.archive_service import create_archive_post
 from app.core.exceptions import InsufficientResourceError
+from app.core.i18n import get_text
 
 router = APIRouter()
 
@@ -61,11 +63,7 @@ async def send_message(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    # GeminiAPIError는 DomainError를 상속하므로 글로벌 핸들러에서 자동 처리됩니다.
 
 @router.post(
     "/chat/message/stream",
@@ -109,11 +107,8 @@ async def send_guest_message(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+    # GeminiAPIError는 DomainError를 상속하므로 글로벌 핸들러에서 자동 처리됩니다.
+    
 
 
 # ══════════════════════════════════════
@@ -224,35 +219,30 @@ async def unlike_message(
     target_ai_msg = conv.messages[request.messageIndex]
     target_user_msg = conv.messages[request.messageIndex - 1] 
     
-    # 역할 확인 (보통 유저 질문 뒤에 모델 답변이 옴)
-    if target_ai_msg.role != "model" or target_user_msg.role != "user":
-        # 만약 인덱스가 꼬였다면 탐색 로직이 필요할 수 있으나, 일단은 인덱스 기반으로 처리
-        raw_prompt = target_user_msg.content
-        original_ai_answer = target_ai_msg.content
-    else:
-        raw_prompt = target_user_msg.content
-        original_ai_answer = target_ai_msg.content
+    # 역할 확인
+    raw_prompt = target_user_msg.content
+    original_ai_answer = target_ai_msg.content
 
-    # 2. 기존의 텍스트 기반 generate_summary_for_archive 대신 LangChain 함수 호출
-    metadata = await extract_metadata_with_langchain(raw_prompt, original_ai_answer)
+    # 2. 백그라운드 태스크 등록 (메타데이터 추출 및 아카이브 생성)
+    # 대화 내역을 dict 리스트로 변환 (직렬화용)
+    chat_history_raw = [
+        {"role": m.role, "content": m.content} 
+        for m in conv.messages[:request.messageIndex] # 답변 직전까지의 맥락
+    ]
     
-    # 3. 추출된 데이터와 '원본 데이터'를 모두 담아서 ArchivePost 생성
-    post_id = await create_archive_post(
+    background_tasks.add_task(
+        process_archive_task_background,
         user=current_user,
-        title=metadata.get("title", "불만족 답변 신고"),
-        content=raw_prompt,           # 아카데미에 보여줄 본문은 가공 없이 질문 원본 그대로 사용
-        category="qna",
+        raw_prompt=raw_prompt,
+        original_ai_answer=original_ai_answer,
+        chat_history=chat_history_raw,
         is_sos=False,
-        summary=metadata.get("summary", ""),
-        tags=metadata.get("tags", []),
-        raw_prompt=raw_prompt,                  # 🌟 원본 저장
-        original_ai_answer=original_ai_answer,  # 🌟 원본 저장
-        domain_category=metadata.get("domain_category", DomainCategory.ETC) # 🌟 분류 저장
+        locale=request.locale
     )
     
     return ChatUnlikeResponse(
         success=True,
-        message="답변이 신고되었습니다. 더 똑똑한 AI로 학습시키겠습니다.",
+        message=get_text("chat.unlike.success", request.locale),
     )
 
 
@@ -264,34 +254,33 @@ async def unlike_message(
     "/chat/sos",
     response_model=ChatSosResponse,
     summary="마스터 지식 의뢰 (SOS)",
-    description="30G를 지불하여 아카데미에 특별 지식 의뢰를 요청합니다.",
+    description="아카데미에 특별 지식 의뢰를 요청합니다.",
 )
 async def request_sos(
     request: ChatSosRequest,
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
 ):
-    # SOS 요청은 이제 무료입니다 (데이터 수집 장려)
+    # 1. 전체 대화 내역 확보
+    conv = await get_or_create_conversation(current_user.uid)
+    chat_history_raw = [
+        {"role": m.role, "content": m.content} 
+        for m in conv.messages
+    ]
     
-    title, content, summary, tags = await generate_summary_for_archive(
-        uid=current_user.uid,
-        text_context=request.question,
-        is_sos=True
-    )
-    
-    # 지식 의뢰 데이터를 ArchivePost에 저장 (카테고리: sos)
-    post_id = await create_archive_post(
+    # 2. 백그라운드 태스크 등록
+    background_tasks.add_task(
+        process_archive_task_background,
         user=current_user,
-        title=title,
-        content=content,
-        category="sos",
+        raw_prompt=request.question,
+        original_ai_answer="[SOS 요청 - AI 답변 없음]",
+        chat_history=chat_history_raw,
         is_sos=True,
-        summary=summary,
-        tags=tags
+        locale=request.locale
     )
     
     return ChatSosResponse(
         success=True,
         goldConsumed=0,
-        message="지식 의뢰가 성공적으로 접수되었습니다.",
+        message=get_text("chat.sos.success", request.locale),
     )

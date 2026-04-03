@@ -15,6 +15,7 @@ class GoldenDataset(Document):
     
     domain_category: str = Field(description="데이터 도메인 카테고리")
     tags: list[str] = Field(default_factory=list)
+    chat_context: list[dict] = Field(default_factory=list, description="원본 대화 내역 스냅샷 (RLHF 학습용)")
     
     total_matches_played: int = Field(description="이 질문에서 이루어진 총 A/B 테스트 횟수")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -23,7 +23,6 @@ from app.services.user_service import (
     sync_guest_stats as sync_guest_stats_service,
     check_daily_reset
 )
-from app.services.donation_service import DonationService
 
 router = APIRouter()
 
@@ -48,6 +47,8 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             intimacy=user.stats.intimacy,
             dailyChatExp=user.stats.daily_chat_exp,
             dailyPetCount=user.stats.daily_pet_count,
+            dailySosCount=user.stats.daily_sos_count,
+            dailyCommissionCount=user.stats.daily_commission_count,
             isOnboardingDone=user.stats.is_onboarding_done,
             learningTickets=user.stats.learning_tickets,
             maxLearningTickets=user.stats.max_learning_tickets,
@@ -65,9 +66,8 @@ def _user_to_profile(user: User) -> UserProfileResponse:
         ),
         createdAt=user.created_at,
         title=user.title,
-        donationTier=user.donation_tier,
-        totalDonated=user.total_donated,
-        availableTitles=user.available_titles,
+        subscriptionPlan=user.subscription_plan,
+        subscriptionExpiresAt=user.subscription_expires_at,
     )
 
 # ══════════════════════════════════════
@@ -199,6 +199,8 @@ async def sync_guest_stats(
         intimacy=stats.intimacy,
         dailyChatExp=stats.daily_chat_exp,
         dailyPetCount=stats.daily_pet_count,
+        dailySosCount=stats.daily_sos_count,
+        dailyCommissionCount=stats.daily_commission_count,
         isOnboardingDone=stats.is_onboarding_done,
         learningTickets = stats.learning_tickets,
         maxLearningTickets=stats.max_learning_tickets,
@@ -255,6 +257,8 @@ async def pet_character(
         intimacy=stats.intimacy,
         dailyChatExp=stats.daily_chat_exp,
         dailyPetCount=stats.daily_pet_count,
+        dailySosCount=stats.daily_sos_count,
+        dailyCommissionCount=stats.daily_commission_count,
         isOnboardingDone=stats.is_onboarding_done,
         learningTickets=stats.learning_tickets,
         maxLearningTickets=stats.max_learning_tickets,
@@ -303,25 +307,3 @@ async def update_nickname(
     return _user_to_profile(current_user)
 
 
-# ══════════════════════════════════════
-# PATCH /users/me/title — 캐릭터 칭호 변경
-# ══════════════════════════════════════
-
-@router.patch(
-    "/users/me/title",
-    response_model=UserProfileResponse,
-    summary="칭호 변경",
-    description="해금된 칭호 중 하나로 캐릭터 칭호를 변경합니다.",
-)
-async def update_title(
-    request: TitleUpdateRequest,
-    current_user: CurrentUser,
-):
-    success = await DonationService.update_user_title(current_user, request.title)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="해금되지 않았거나 유효하지 않은 칭호입니다."
-        )
-    
-    return _user_to_profile(current_user)

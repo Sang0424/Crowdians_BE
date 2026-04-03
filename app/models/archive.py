@@ -16,6 +16,18 @@ class DomainCategory(str, Enum):
     ETC = "기타"
 
 
+class ConversationSnapshot(BaseModel):
+    """Unlike/SOS 제출 시점 기준 대화 내역 스냅샷"""
+    role: str      # "user" | "model"
+    content: str
+
+
+class ConversationSnapshot(BaseModel):
+    """Unlike/SOS 제출 시점 기준 대화 내역 스냅샷"""
+    role: str      # "user" | "model"
+    content: str
+
+
 class ArchiveAnswer(BaseModel):
     """지식 도서관 답변 (임베디드 모델로 처리하거나 별도 Document로 처리 가능)
     여기서는 관리 편의상 ArchivePost 내부에 임베디드로 저장하는 방식을 추천합니다만,
@@ -45,6 +57,10 @@ class ArchivePost(Document):
     raw_prompt: str = Field(default="", description="유저가 입력한 최초 질문 원본")
     original_ai_answer: str = Field(default="", description="불만족 평가를 받은 AI의 최초 오답 원본")
     domain_category: DomainCategory = Field(default=DomainCategory.ETC, description="데이터 판매용 대분류")
+    chat_context: list[ConversationSnapshot] = Field(
+        default_factory=list, 
+        description="관련 대화 내역 (비공개, DB 전용)"
+    )
     
     # 답변들의 ID 목록 (ArchiveAnswer Document의 id)
     # 또는 역방향 참조를 위해 안 들고 있어도 무방합니다. (보통 RDBMS처럼)

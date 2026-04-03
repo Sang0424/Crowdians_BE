@@ -2,12 +2,15 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
 from app.core.redis import init_redis, close_redis
+from app.core.exceptions import DomainError
+from app.core.i18n import get_text
 from app.db import init_db
 
 
@@ -36,16 +39,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routers ──
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from app.core.exceptions import DomainError
-
 @app.exception_handler(DomainError)
 async def domain_error_handler(request: Request, exc: DomainError):
+    # Accept-Language 헤더에서 로케일 추출 (예: ko-KR -> ko)
+    accept_lang = request.headers.get("accept-language", "ko")
+    locale = accept_lang.split(",")[0].split("-")[0].lower()
+    if locale not in ["ko", "en", "ja"]:
+        locale = "ko"
+    
+    # 1. 예외 code에 해당하는 번역 키가 있는지 확인
+    error_key = f"error.{exc.code.lower()}"
+    localized_message = get_text(error_key, locale=locale, **exc.params)
+    
+    # 2. 번역 키를 못 찾은 경우 (key 자체가 반환됨) exc.message 사용
+    if localized_message == error_key:
+        localized_message = exc.message
+
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.message},
+        content={
+            "detail": localized_message,
+            "code": exc.code
+        },
     )
 
 app.include_router(api_v1_router)

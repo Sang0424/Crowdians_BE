@@ -24,9 +24,12 @@ class Settings(BaseSettings):
     # ── Internal API (NextAuth ↔ Backend 서버 간 인증) ──
     INTERNAL_API_KEY: str
 
-    # ── Donation ──
-    KOFI_VERIFICATION_TOKEN: str = ""
-    CRYPTO_WALLET_ADDRESS: str = "0x742d35Cc6634C0532925a3b844Bc454e4438f44e" # Placeholder
+    # ── Lemon Squeezy (Subscription) ──
+    LEMONSQUEEZY_API_KEY: str = ""
+    LEMONSQUEEZY_WEBHOOK_SECRET: str = ""
+    LEMONSQUEEZY_VARIANT_ID: str = ""
+    LEMONSQUEEZY_STORE_ID: str = ""
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # ── CORS ──
     CORS_ORIGINS: list[str] = [

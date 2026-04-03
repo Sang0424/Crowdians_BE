@@ -14,7 +14,15 @@ def check_daily_reset(user: User) -> bool:
     if user.stats.last_daily_reset != today_str:
         user.stats.learning_tickets = user.stats.max_learning_tickets
         user.stats.daily_chat_exp = 0
-        user.stats.stamina = user.stats.max_stamina
+        user.stats.daily_sos_count = 0        # SOS 횟수 초기화
+        user.stats.daily_commission_count = 0  # 지정 질문 횟수 초기화
+        
+        # 프리미엄 유저는 스태미나 충전 불필요 (항상 999)
+        if user.subscription_plan == "premium":
+            user.stats.stamina = 999
+        else:
+            user.stats.stamina = user.stats.max_stamina
+            
         user.stats.last_daily_reset = today_str
         is_reset = True
         

@@ -42,6 +42,7 @@ class ChatHistoryResponse(BaseModel):
 class ChatUnlikeRequest(BaseModel):
     messageIndex: int = Field(..., description="배열 상의 메시지 인덱스")
     reason: str = Field(default="", description="신고 이유")
+    locale: str = Field(default="ko", description="클라이언트 언어")
 
 
 class ChatUnlikeResponse(BaseModel):
@@ -53,6 +54,7 @@ class ChatUnlikeResponse(BaseModel):
 
 class ChatSosRequest(BaseModel):
     question: str = Field(..., description="아카데미에 의뢰할 질문")
+    locale: str = Field(default="ko", description="클라이언트 언어")
 
 
 class ChatSosResponse(BaseModel):

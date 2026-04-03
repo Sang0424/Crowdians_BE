@@ -74,7 +74,36 @@ async def submit_card(
     current_user: CurrentUser,
 ):
     try:
-        result = await submit_card_answer(current_user, card_id, request.answer)
+        from app.models.academy import KnowledgeCard
+        from bson import ObjectId
+        from app.services.academy_service import submit_ab_vote
+
+        # 카드 타입 확인을 위해 먼저 조회
+        try:
+            card = await KnowledgeCard.get(ObjectId(card_id))
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="유효하지 않은 카드 ID입니다.")
+            
+        if not card:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="카드를 찾을 수 없습니다.")
+
+        # 1. A/B 테스트 목적의 Vote 타입인 경우 (chosen_answer가 전달된 경우)
+        if card.type == "vote" and request.chosen_answer is not None:
+            result = await submit_ab_vote(
+                current_user, 
+                card_id, 
+                str(request.chosen_answer), 
+                str(request.unchosen_answer or "")
+            )
+        else:
+            # 2. Teach, Quiz 타입 또는 단일 답변인 경우
+            # answer가 없으면 chosen_answer를 fallback으로 사용
+            final_answer = request.answer if request.answer is not None else request.chosen_answer
+            if final_answer is None:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="답변 데이터가 누락되었습니다.")
+                
+            result = await submit_card_answer(current_user, card_id, final_answer)
+
         return CardSubmitResponse(**result)
     except ValueError as e:
         raise HTTPException(

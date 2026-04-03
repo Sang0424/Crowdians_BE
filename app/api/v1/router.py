@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, chat, academy, archive, adventure, mailbox, reports, rankings, quests, donations
+from app.api.v1.endpoints import auth, users, chat, academy, archive, adventure, mailbox, reports, rankings, quests, subscriptions
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -31,4 +31,4 @@ api_v1_router.include_router(adventure.router, tags=["Adventure"])
 api_v1_router.include_router(mailbox.router, tags=["Mailbox"])
 api_v1_router.include_router(reports.router, tags=["Reports"])
 api_v1_router.include_router(rankings.router, tags=["Rankings"])
-api_v1_router.include_router(donations.router, tags=["Donations"])
+api_v1_router.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])

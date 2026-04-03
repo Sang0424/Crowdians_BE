@@ -14,6 +14,18 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 
+from google.genai import errors as genai_errors
+from app.core.exceptions import (
+    GeminiRateLimitError,
+    GeminiSafetyBlockError,
+    GeminiAuthError,
+    GeminiServerError,
+    GeminiInvalidRequestError,
+)
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Gemini 클라이언트 초기화
 # 환경변수나 설정에서 GEMINI_API_KEY를 가져옵니다.
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
@@ -59,7 +71,7 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     common_rules = f"""
     [답변 포매팅 규칙 ⭐ 가장 중요]
     1. 메신저로 대화하듯 자연스럽게 답변해.
-    2. 절대 이모티콘(Emojis)을 사용하지 마. (예: 😊, ✨, ⚔️ 등 사용 금지)
+    2. 가급적 이모티콘(Emojis)을 사용하지 마. (예: 😊, ✨, ⚔️ 등)
     3. 한 문장 또는 의미 단위(2~3문장)마다 반드시 줄바꿈(\\n)을 넣어.
     4. 핵심 정보와 부가 설명 사이에 빈 줄(\\n\\n)을 넣어 단락을 구분해.
     5. 절대 한 덩어리로 뭉쳐서 답변하지 마. 반드시 적절한 줄바꿈으로 읽기 쉽게 해.
@@ -107,6 +119,48 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
         특징: 모든 것을 처음 본 것처럼 신기해하며 파트너와 함께라면 어디든 좋아함.
         """ + common_rules
 
+def _handle_gemini_error(e: Exception) -> None:
+    """Gemini SDK 예외를 도메인 예외로 변환합니다."""
+    if isinstance(e, genai_errors.ClientError):
+        if e.code == 429:
+            logger.warning(f"Gemini Rate Limit: {e.message}")
+            raise GeminiRateLimitError()
+        elif e.code in (401, 403):
+            logger.error(f"Gemini Auth Error: {e.message}")
+            raise GeminiAuthError()
+        elif e.code == 400:
+            logger.warning(f"Gemini Bad Request: {e.message}")
+            raise GeminiInvalidRequestError(detail=e.message)
+        else:
+            logger.error(f"Gemini Client Error ({e.code}): {e.message}")
+            raise GeminiInvalidRequestError(detail=f"code={e.code}")
+    elif isinstance(e, genai_errors.ServerError):
+        logger.error(f"Gemini Server Error ({e.code}): {e.message}")
+        raise GeminiServerError()
+    elif isinstance(e, genai_errors.APIError):
+        logger.error(f"Gemini Unknown API Error: {e}")
+        raise GeminiServerError()
+    else:
+        # SDK 외부의 예상치 못한 에러
+        logger.exception(f"Unexpected error during Gemini call: {e}")
+        raise GeminiServerError()
+
+def _check_safety_block(response) -> str:
+    """응답의 안전 필터 차단 여부를 확인하고, 차단 시 예외를 던집니다."""
+    if not response.candidates:
+        raise GeminiSafetyBlockError()
+    
+    candidate = response.candidates[0]
+    # finish_reason이 SAFETY인 경우
+    if hasattr(candidate, 'finish_reason') and str(candidate.finish_reason) == "SAFETY":
+        raise GeminiSafetyBlockError()
+    
+    # parts가 비어있는 경우 (암묵적 차단)
+    if not candidate.content or not candidate.content.parts:
+        raise GeminiSafetyBlockError()
+    
+    return response.text
+
 async def send_chat_message(
     user: User,
     message_content: str,
@@ -121,8 +175,9 @@ async def send_chat_message(
     if check_daily_reset(user):
         await user.save()
 
-    # 1. 스태미나 확인 (Stamina 1 소모)
-    if user.stats.stamina < 1:
+    # 1. 스태미나 확인 (프리미엄은 무제한)
+    is_premium = user.subscription_plan == "premium"
+    if not is_premium and user.stats.stamina < 1:
         raise ValueError("스태미나가 부족합니다.")
     
     # 2. 대화 세션 조회 및 과거 내역 구성 (RAG/Golden Dataset 참조 가능)
@@ -169,15 +224,11 @@ async def send_chat_message(
                 safety_settings=my_safety_settings,
             )
         )
-        if not response.candidates or not response.candidates[0].content.parts:
-            # 안전 필터에 의해 텍스트가 생성되지 않은 경우
-            ai_response_text = "앗, 그 질문에는 대답하기가 조금 곤란해요. 다른 이야기를 해볼까요?"
-        else:
-            ai_response_text = response.text
+        ai_response_text = _check_safety_block(response)
     except Exception as e:
-        # 에러 발생 시 예외를 다시 던져서(raise) DB 저장 및 스태미나 차감을 방지합니다.
-        print(f"Gemini API Error: {str(e)}")
-        raise RuntimeError(f"Gemini API 호출 중 오류가 발생했습니다: {str(e)}")
+        if isinstance(e, (GeminiRateLimitError, GeminiSafetyBlockError, GeminiAuthError, GeminiServerError, GeminiInvalidRequestError)):
+            raise e
+        _handle_gemini_error(e)
     
     # 3. DB에 메시지 기록
     now = datetime.now(timezone.utc)
@@ -189,7 +240,8 @@ async def send_chat_message(
     await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updatedAt": conv.updatedAt})
     
     # 4. 유저 스탯 갱신
-    user.stats.stamina -= 1
+    if not is_premium:
+        user.stats.stamina -= 1
     
     # --- 보상 계산 ---
     # 4-1. 경험치 (EXP)
@@ -209,8 +261,8 @@ async def send_chat_message(
         
     # user.stats.intimacy += 1 (지시: 채팅 시 친밀도 상승 제거)
     
-    # 레벨업 로직 (예: max_exp 초과 시)
-    user.stats.process_level_up()
+    # 레벨업 로직
+    user.stats.process_level_up(is_premium=is_premium)
         
     await user.save()
     
@@ -227,7 +279,7 @@ async def send_chat_message(
         },
         "expGained": exp_gained,
         "goldGained": gold_gained,  # 추가된 필드
-        "staminaConsumed": 1,
+        "staminaConsumed": 0 if is_premium else 1,
         "intimacyGained": 0,
     }
 
@@ -314,7 +366,7 @@ async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos:
             data.get("tags", [])
         )
     except Exception as e:
-        print(f"Failed to generate summary: {e}")
+        logger.error(f"Failed to generate summary: {str(e)}")
         # 오류 시 기본값 반환
         return "AI 요약 생성 실패", text_context if text_context else "내용을 요약할 수 없습니다.", "", []
 
@@ -356,9 +408,9 @@ async def send_guest_chat_message(
                 safety_settings=my_safety_settings
             )
         )
-        ai_message_text = response.text
+        ai_message_text = _check_safety_block(response)
     except Exception as e:
-        ai_message_text = f"API 오류가 발생했습니다: {str(e)}"
+        _handle_gemini_error(e)
 
     return {
         "userMessage": {
@@ -380,12 +432,15 @@ async def send_guest_chat_message(
 # ── [NEW] LangChain 기반 메타데이터 추출 ──
 
 class ArchiveMetadata(BaseModel):
-    title: str = Field(description="질문의 핵심을 요약한 15자 내외의 짧은 제목")
-    summary: str = Field(description="질문과 상황에 대한 1~2줄 요약")
+    is_valid_question: bool = Field(description="유효한 질문인지 여부. 의미 없는 문자열('asdf' 등), 짧은 단순 인사, 혹은 전체 대화 맥락을 봐도 핵심 질문을 도출할 수 없는 경우 false")
+    title: str = Field(description="핵심 질문을 반드시 의문문('?') 형태로 15자 내외로 작성. 예: '파이썬 비동기 처리 방법은?'")
+    summary: str = Field(description="반드시 줄바꿈(\\n)으로 구분된 3줄 요약. 1줄: 어떤 상황인지, 2줄: 무엇이 문제인지, 3줄: 무엇을 알고 싶은지")
     tags: list[str] = Field(description="검색용 키워드 3~5개")
     domain_category: DomainCategory = Field(description="제공된 DomainCategory 중 가장 적합한 대분류 1개 선택")
+    context_start_index: int = Field(description="전달된 대화 목록(인덱스 포함)에서 이 질문과 직접적으로 관련된 대화가 시작되는 시작 인덱스 번호 (0부터 시작)")
+    detailed_content: str = Field(description="전체 대화 상황을 설명하는 상세 본문. 블로그나 커뮤니티 게시글처럼 본인의 상황을 남들에게 설명하는 친근한 느낌으로 작성. 특히 AI가 다른 사용자들에게 물어보는 느낌으로 작성해야 함. AI 시점. 개인정보는 비식별화(예: '사용자 A') 처리하고, 유저의 마지막 질문과 AI의 오답 내용을 자연스럽게 포함해야 함")
 
-async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: str) -> dict:
+async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: str, chat_history: list = None) -> dict:
     """유저의 질문과 AI의 오답을 분석하여 분류 메타데이터를 추출합니다."""
     
     # LangChain 용 Gemini 모델 초기화 (안정적인 JSON 추출)
@@ -397,22 +452,46 @@ async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: s
     parser = JsonOutputParser(pydantic_object=ArchiveMetadata)
     
     prompt = PromptTemplate(
-        template="""당신은 AI 학습용 데이터셋을 분류하는 어노테이터입니다.
-        유저가 아래의 질문을 했고, AI가 오답을 냈습니다. 
-        이 상황을 분석하여 가장 적합한 카테고리와 메타데이터를 추출하세요.
+        template="""당신은 AI 학습용 데이터셋을 분류하고 정제하는 전문 어노테이터입니다.
+        유저가 아래의 이전 대화들을 나누던 중 질문을 했고, AI가 오답을 냈습니다.
+        이 상황을 분석하여 정확한 메타데이터와 관련 대화 시작 지점을 추출하세요.
         
-        [유저 질문 원본]: {raw_prompt}
-        [AI 답변 원본]: {original_ai_answer}
+        [이전 대화 목록 (인덱스 포함)]:
+        {chat_history}
+        
+        [유저의 핵심 질문]: {raw_prompt}
+        [AI의 답변 오답]: {original_ai_answer}
+        
+        결과물 형식 규칙:
+        1. 'is_valid_question': 유저의 질문이 기술적/내용적으로 가치가 있는 질문이면 true, 단순 노이즈(예: 'ㅋㅋㅋ', 'asdf')이거나 맥락이 전혀 없어 분류가 불가능하면 false.
+        2. 'title': 반드시 물음표(?)로 끝나는 간결한 질문 형식. 유효하지 않은 질문인 경우 '유효하지 않은 질문'.
+        3. 'summary': 반드시 3개의 문장이 줄바꿈(\\n)으로 구분. (상황/문제/요구사항 순서)
+        4. 'detailed_content': 
+           - 스타일: 블로그나 커뮤니티(에펨코리아, 클리앙 등)에 자신의 상황을 설명하고 도움을 요청하는 듯한 친숙한 문체.
+           - 내용: 이전 대화 맥락을 활용하여 어떤 과정을 거쳐 이 질문에 도달했는지 상세히 서술.
+           - 비식별화: 유저 이름, 전화번호, 이메일, 회사명 등 모든 개인정보는 반드시 '사용자 A', 'B 업체' 등으로 익명 처리.
+           - 필수 포함: 질문의 발단이 된 유저의 마지막 핵심 질문과 AI가 내놓은 잘못된 답변 내용을 본문 내에 인용하여 반드시 포함.
+           - 가독성: 적절한 줄바꿈과 문단 나누기를 통해 가독성 확보.
+        5. 'context_start_index': 질문의 맥락 파악에 필요한 최초 대화의 인덱스.
         
         {format_instructions}""",
-        input_variables=["raw_prompt", "original_ai_answer"],
+        input_variables=["chat_history", "raw_prompt", "original_ai_answer"],
         partial_variables={"format_instructions": parser.get_format_instructions()}
     )
     
     chain = prompt | llm | parser
     
     try:
+        # 대화 내역을 인덱스 포함 텍스트화
+        chat_history_text = ""
+        if chat_history:
+            for i, m in enumerate(chat_history):
+                role = m.get("role", "unknown")
+                content = m.get("content", "")[:200]
+                chat_history_text += f"[{i}] {role}: {content}\n"
+        
         result = await chain.ainvoke({
+            "chat_history": chat_history_text or "없음",
             "raw_prompt": raw_prompt,
             "original_ai_answer": original_ai_answer
         })
@@ -421,8 +500,10 @@ async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: s
         print(f"LangChain Metadata Extraction Failed: {e}")
         # 실패 시 기본값 반환
         return {
+            "is_valid_question": False,
             "title": "알 수 없는 질문",
             "summary": "메타데이터 추출에 실패했습니다.",
+            "detailed_content": "상세 내용을 생성하지 못했습니다. 원본 질문을 확인해주세요.",
             "tags": ["error"],
             "domain_category": DomainCategory.ETC
         }
@@ -469,7 +550,8 @@ async def stream_chat_message(
         if check_daily_reset(user):
             await user.save()
 
-        if user.stats.stamina < 1:
+        is_premium = user.subscription_plan == "premium"
+        if not is_premium and user.stats.stamina < 1:
             yield {"type": "error", "data": {"message": "스태미나가 부족합니다."}}
             return
 
@@ -511,12 +593,21 @@ async def stream_chat_message(
                 yield {"type": "token", "data": {"token": chunk.text}}
         
         if not ai_response_text:
-            ai_response_text = "앗, 그 질문에는 대답하기가 조금 곤란해요. 다른 이야기를 해볼까요?"
-            yield {"type": "token", "data": {"token": ai_response_text}}
+            raise GeminiSafetyBlockError()
 
     except Exception as e:
-        print(f"Gemini Streaming Error: {str(e)}")
-        yield {"type": "error", "data": {"message": f"Gemini API 오류: {str(e)}"}}
+        if isinstance(e, genai_errors.ClientError):
+            code = "GEMINI_RATE_LIMIT" if e.code == 429 else ("GEMINI_AUTH_ERROR" if e.code in (401, 403) else "GEMINI_INVALID_REQUEST")
+            msg = e.message
+        elif isinstance(e, GeminiSafetyBlockError):
+            code = "GEMINI_SAFETY_BLOCK"
+            msg = e.message
+        else:
+            code = "GEMINI_SERVER_ERROR"
+            msg = str(e)
+            
+        logger.error(f"Gemini Streaming Error: {msg}")
+        yield {"type": "error", "data": {"code": code, "message": msg}}
         return
 
     # 2. 사후 처리 (인증 유저만)
@@ -534,7 +625,9 @@ async def stream_chat_message(
         await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updatedAt": conv.updatedAt})
         
         # 스탯 갱신
-        user.stats.stamina -= 1
+        is_premium = user.subscription_plan == "premium"
+        if not is_premium:
+            user.stats.stamina -= 1
         if user.stats.daily_chat_exp < 50:
             exp_gain = min(2, 50 - user.stats.daily_chat_exp)
             user.stats.exp += exp_gain
@@ -546,7 +639,7 @@ async def stream_chat_message(
             gold_gained = random.randint(1, 3)
             user.stats.gold += gold_gained
             
-        user.stats.process_level_up()
+        user.stats.process_level_up(is_premium=is_premium)
         await user.save()
 
     # 3. 완료 이벤트 전송
@@ -555,7 +648,7 @@ async def stream_chat_message(
         "data": {
             "expGained": exp_gained,
             "goldGained": gold_gained,
-            "staminaConsumed": 1 if user else 1, # 게스트는 스탯 차감은 없지만 소비량은 표시?
+            "staminaConsumed": 0 if (user and user.subscription_plan == "premium") else 1,
             "intimacyGained": 0
         }
     }

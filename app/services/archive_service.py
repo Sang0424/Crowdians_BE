@@ -12,6 +12,7 @@ from app.models.academy import KnowledgeCard
 from app.db.repository.archive_repository import archive_repo, archive_answer_repo
 from app.services.mailbox_service import send_system_mail
 from app.services.chat_service import generate_honeypot_answer
+from app.core.i18n import get_text
 
 
 async def create_archive_post(
@@ -26,11 +27,31 @@ async def create_archive_post(
     tags: list[str] = None,
     raw_prompt: str = "",
     original_ai_answer: str = "",
-    domain_category: DomainCategory = DomainCategory.ETC
+    domain_category: DomainCategory = DomainCategory.ETC,
+    chat_context: list = None
 ) -> str:
     """새로운 지식 도서관 질문을 등록합니다."""
+    is_premium = user.subscription_plan == "premium"
+
+    # 0. 일일 제한 체크 (무료 유저 전용)
+    if not is_premium:
+        from app.core.exceptions import DomainError
+        if is_sos:
+            if user.stats.daily_sos_count >= 3:
+                raise DomainError(
+                    message="SOS limit exceeded",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="LIMIT_EXCEEDED_SOS"
+                )
+        if target_user_id:
+            if user.stats.daily_commission_count >= 1:
+                raise DomainError(
+                    message="Commission limit exceeded",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="LIMIT_EXCEEDED_COMMISSION"
+                )
+
     # 직접 의뢰(Direct Commission)인 경우 상태를 'commissioned'로 설정
-    status = "commissioned" if target_user_id else "open"
     
     post = await archive_repo.create(obj_in={
         "title": title,
@@ -47,20 +68,28 @@ async def create_archive_post(
         "raw_prompt": raw_prompt,
         "original_ai_answer": original_ai_answer,
         "domain_category": domain_category,
+        "chat_context": chat_context or [],
     })
     
     # 직접 의뢰인 경우 대상 유저에게 알림 메일 발송
     if target_user_id:
         await send_system_mail(
             user_id=target_user_id,
-            title="🎯 새로운 직접 의뢰가 도착했습니다!",
-            content=f"'{user.nickname}' 크라우디언님이 당신에게 직접 지식 의뢰를 보냈습니다.\n\n제목: {title}",
+            title=get_text("archive.commission.title", locale),
+            content=get_text("archive.commission.content", locale, nickname=user.nickname, title=title),
             mail_type="commission_request",
             reference_id=str(post.id)
         )
     
     # 아카데미(Academy)에서 풀 수 있도록 KnowledgeCard 생성 (일반 질문만)
     if not target_user_id:
+        # 우선순위 설정 (SOS: 100, 프리미엄: +200, 일반: 0)
+        card_priority = 0
+        if is_sos:
+            card_priority += 100
+        if is_premium:
+            card_priority += 200
+
         card = KnowledgeCard(
             type="teach",
             question=f"[{category}] {title}",
@@ -68,10 +97,18 @@ async def create_archive_post(
             summary=summary,
             choices=[],
             correct_answer="",
-            priority=100 if is_sos else 0, # SOS 게시글인 경우 우선순위 상향
+            priority=card_priority,
             linked_post_id=str(post.id)
         )
         await card.insert()
+    
+    # 카운터 증가 및 저장
+    if is_sos:
+        user.stats.daily_sos_count += 1
+    if target_user_id:
+        user.stats.daily_commission_count += 1
+    
+    await user.save()
     
     return str(post.id)
 
@@ -603,3 +640,74 @@ async def delete_archive_answer(user_id: str, answer_id: str) -> bool:
         await post.save()
         
     return True
+async def process_archive_task_background(
+    user: User,
+    raw_prompt: str,
+    original_ai_answer: str,
+    chat_history: list[dict],
+    is_sos: bool = False,
+    locale: str = "ko"
+):
+    """
+    백그라운드에서 메타데이터를 추출하고 아카이브 포스트를 생성합니다.
+    """
+    from app.services.chat_service import extract_metadata_with_langchain
+    from app.models.archive import ConversationSnapshot, DomainCategory, ArchivePost
+    
+    try:
+        metadata = await extract_metadata_with_langchain(
+            raw_prompt=raw_prompt,
+            original_ai_answer=original_ai_answer,
+            chat_history=chat_history
+        )
+        
+        # [NEW] 질문 유효성 검사 및 필터링 (기본값 False로 더 엄격하게 처리)
+        if not metadata.get("is_valid_question", False):
+            print(f"Skipping archive task for user {user.uid} due to invalid question metadata.")
+            # 사용자에게 거절 사유 안내 메일 발송
+            reason = metadata.get('summary') or get_text("archive.default.reason", locale)
+            await send_system_mail(
+                user_id=user.uid,
+                title=get_text("archive.rejection.title", locale),
+                content=get_text("archive.rejection.content", locale, nickname=user.nickname, reason=reason),
+                mail_type="archive_rejection"
+            )
+            return
+        
+        # 2. 관련 대화 슬라이싱
+        # AI가 선별한 시작 인덱스
+        start_idx = metadata.get("context_start_index", 0)
+        # 인덱스 유효성 검사
+        if start_idx < 0 or start_idx >= len(chat_history):
+            start_idx = 0
+            
+        sliced_context_raw = chat_history[start_idx:]
+        
+        # 3. 모델 객체로 변환
+        final_context = [
+            ConversationSnapshot(role=m.get("role", "unknown"), content=m.get("content", "")) 
+            for m in sliced_context_raw
+        ]
+        
+        # 4. 아카이브 생성 호출
+        from app.services.archive_service import create_archive_post
+        await create_archive_post(
+            user=user,
+            title=metadata.get("title", "지식 의뢰" if is_sos else "불만족 답변"),
+            content=metadata.get("detailed_content", raw_prompt),
+            is_sos=is_sos,
+            category="sos" if is_sos else "qna",
+            locale=locale,
+            summary=metadata.get("summary", ""),
+            tags=metadata.get("tags", []),
+            raw_prompt=raw_prompt,
+            original_ai_answer=original_ai_answer,
+            domain_category=metadata.get("domain_category", DomainCategory.ETC),
+            chat_context=final_context
+        )
+        print(f"Background archive task completed for user {user.uid}")
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in background archive task: {e}")
+        traceback.print_exc()
