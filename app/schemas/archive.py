@@ -22,6 +22,7 @@ class ArchiveAnswerResponse(BaseModel):
     content: str
     trustCount: int
     isTrustedByMe: bool = False  # 유저 본인이 이미 투표했는지 여부
+    isGolden: bool = False       # [추가] 골든 배지 여부
     createdAt: datetime
 
 

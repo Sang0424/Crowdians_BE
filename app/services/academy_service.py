@@ -8,7 +8,7 @@ from app.services.user_service import check_daily_reset
 
 
 
-async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
+async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> list[dict]:
     """일일 지식카드 5장을 조회합니다. (ArchivePost 연동 카드 및 일반 퀴즈)"""
     # 1. 일일 초기화 체크
     if check_daily_reset(user):
@@ -28,35 +28,44 @@ async def get_daily_cards(user: User, ticket_index: int) -> list[dict]:
 
     excluded_linked_ids = list(set(answered_post_ids + my_post_ids))
 
-    # 3. 공통 제외 쿼리 생성
-    base_filter = KnowledgeCard.find(
+    # 3. 공통 제외 쿼리 생성 (언어 필터 추가)
+    query_filters = [
         KnowledgeCard.is_migrated == False,
-        Or(
-            KnowledgeCard.linked_post_id == None,
-            NotIn(KnowledgeCard.linked_post_id, excluded_linked_ids)
-        ) if excluded_linked_ids else {}
-    )
+        KnowledgeCard.locale == locale
+    ]
+    
+    if excluded_linked_ids:
+        query_filters.append(
+            Or(
+                KnowledgeCard.linked_post_id == None,
+                NotIn(KnowledgeCard.linked_post_id, excluded_linked_ids)
+            )
+        )
+    
+    base_filter = KnowledgeCard.find(*query_filters)
 
     import random
     
-    # ── Teach 타입 2장 확보 ──
-    teach_cards = await base_filter.find(
-        KnowledgeCard.type == "teach"
-    ).sort([("priority", -1), ("created_at", -1)]).limit(2).to_list()
-    
-    # ── Vote 타입 3장 확보 ──
+    # ── 1단계: Vote 타입 우선 확보 (최대한 3장) ──
     vote_cards = await base_filter.find(
         KnowledgeCard.type == "vote"
     ).sort([("priority", -1), ("created_at", -1)]).limit(3).to_list()
     
-    # 부족한 카드 보충 (총 5장이 되도록)
-    total_cards = teach_cards + vote_cards
+    # ── 2단계: 부족한 만큼 Teach 타입으로 채우기 (최대 5장 확보를 목표) ──
+    needed_teach = 5 - len(vote_cards)
+    teach_cards = await base_filter.find(
+        KnowledgeCard.type == "teach"
+    ).sort([("priority", -1), ("created_at", -1)]).limit(needed_teach).to_list()
+    
+    total_cards = vote_cards + teach_cards
+    
+    # ── 3단계: 그래도 5장이 안 되면 나머지 타입(quiz 등)에서 추가 확보 ──
     if len(total_cards) < 5:
         existing_ids = [c.id for c in total_cards]
-        needed = 5 - len(total_cards)
+        needed_extra = 5 - len(total_cards)
         extra_cards = await base_filter.find(
             NotIn(KnowledgeCard.id, existing_ids)
-        ).sort([("priority", -1), ("created_at", -1)]).limit(needed).to_list()
+        ).sort([("priority", -1), ("created_at", -1)]).limit(needed_extra).to_list()
         total_cards += extra_cards
     
     # 다양한 노출을 위해 섞어줌
@@ -184,7 +193,7 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         user.stats.trust += trust_gained
         
         # 레벨업 판정
-        user.stats.process_level_up()
+        user.stats.process_level_up(max_stamina=user.max_stamina)
             
         # 🌟 7. [수정] 카드의 trust_count 증가 (단순 +1이 아닌 가중치 반영)
         card.trust_count += voting_weight
@@ -312,7 +321,7 @@ async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_
     user.stats.exp += exp_gained
     user.stats.gold += gold_gained
     user.stats.trust += trust_gained
-    user.stats.process_level_up()
+    user.stats.process_level_up(max_stamina=user.max_stamina)
     await user.save()
 
     # 🌟 7. 골든 데이터셋 임계점 돌파 검사 (threshold = 100)

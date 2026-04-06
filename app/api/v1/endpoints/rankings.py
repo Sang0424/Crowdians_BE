@@ -39,8 +39,10 @@ async def list_rankings(
                 intimacy=u.stats.intimacy,
                 dailyChatExp=u.stats.daily_chat_exp,
                 dailyPetCount=u.stats.daily_pet_count,
+                dailySosCount=u.stats.daily_sos_count,
+                dailyCommissionCount=u.stats.daily_commission_count,
                 isOnboardingDone=u.stats.is_onboarding_done,
-                maxLearningTickets=u.stats.max_learning_tickets,
+                maxLearningTickets=u.max_learning_tickets,
             )
 
             equipped_parts_resp = None

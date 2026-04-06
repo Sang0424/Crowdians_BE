@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     LEMONSQUEEZY_WEBHOOK_SECRET: str = ""
     LEMONSQUEEZY_VARIANT_ID: str = ""
     LEMONSQUEEZY_STORE_ID: str = ""
+    LEMONSQUEEZY_STORE_SUBDOMAIN: str = "crowdians"  # Lemon Squeezy store subdomain
     FRONTEND_URL: str = "http://localhost:3000"
 
     # ── CORS ──

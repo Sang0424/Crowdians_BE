@@ -52,6 +52,7 @@ async def create_archive_post(
                 )
 
     # 직접 의뢰(Direct Commission)인 경우 상태를 'commissioned'로 설정
+    post_status = "commissioned" if target_user_id else "open"
     
     post = await archive_repo.create(obj_in={
         "title": title,
@@ -62,7 +63,7 @@ async def create_archive_post(
         "locale": locale,
         "character_type": user.character.type if user.character else "unknown",
         "target_user_id": target_user_id,
-        "status": status,
+        "status": post_status,
         "summary": summary,
         "tags": tags or [],
         "raw_prompt": raw_prompt,
@@ -98,6 +99,7 @@ async def create_archive_post(
             choices=[],
             correct_answer="",
             priority=card_priority,
+            locale=locale,
             linked_post_id=str(post.id)
         )
         await card.insert()
@@ -192,6 +194,7 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
             "content": ans.content,
             "trustCount": ans.trust_count,
             "isTrustedByMe": user_uid in ans.voted_user_ids,
+            "isGolden": getattr(ans, "is_golden", False),
             "createdAt": ans.createdAt,
         })
         
@@ -428,9 +431,12 @@ async def toggle_trust_vote(user: User, answer_id: str) -> dict:
         await user_repo.update(db_obj=author, obj_in={"stats": author.stats})
 
     # 신뢰도 보상 및 특별 로직 (trust_count == 10 달성 최초 1회 등)
-    if is_trusted and answer.trust_count == 10:
-        # KnowledgeCard로 자동 승격
-        await _promote_to_knowledge_card(answer)
+    if is_trusted and answer.trust_count >= 10:
+        if not getattr(answer, "is_golden", False):
+            answer.is_golden = True
+            await answer.save()
+            # KnowledgeCard로 자동 승격
+            await _promote_to_knowledge_card(answer)
 
     return {
         "isTrusted": is_trusted,

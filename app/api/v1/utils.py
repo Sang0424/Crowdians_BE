@@ -33,7 +33,7 @@ def user_to_response(user: User) -> UserResponse:
             dailyCommissionCount=user.stats.daily_commission_count,
             isOnboardingDone=user.stats.is_onboarding_done,
             learningTickets=user.stats.learning_tickets,
-            maxLearningTickets=user.stats.max_learning_tickets,
+            maxLearningTickets=user.max_learning_tickets,
         ),
         character=CharacterResponse(
             type=user.character.type,

@@ -13,12 +13,14 @@ from app.models.donation import Donation
 from app.models.mailbox import Mail
 from app.models.report import Report
 from app.models.quest import Quest, UserQuestBookmark
+from app.models.subscription import SubscriptionEvent
+from app.models.golden_dataset import GoldenDataset
 
 # 초기화할 Beanie Document 모델 목록
 DOCUMENT_MODELS = [
     User, ChatConversation, KnowledgeCard, CardResponse, 
     ArchivePost, ArchiveAnswer, AdventureSession, Mail, Report,
-    Quest, UserQuestBookmark, Donation
+    Quest, UserQuestBookmark, Donation, SubscriptionEvent, GoldenDataset
 ]
 
 

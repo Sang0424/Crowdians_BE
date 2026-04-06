@@ -51,7 +51,7 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             dailyCommissionCount=user.stats.daily_commission_count,
             isOnboardingDone=user.stats.is_onboarding_done,
             learningTickets=user.stats.learning_tickets,
-            maxLearningTickets=user.stats.max_learning_tickets,
+            maxLearningTickets=user.max_learning_tickets,
             title=user.title,
         ),
         character=CharacterResponse(
@@ -203,7 +203,7 @@ async def sync_guest_stats(
         dailyCommissionCount=stats.daily_commission_count,
         isOnboardingDone=stats.is_onboarding_done,
         learningTickets = stats.learning_tickets,
-        maxLearningTickets=stats.max_learning_tickets,
+        maxLearningTickets=updated_user.max_learning_tickets,
     )
 
 
@@ -261,7 +261,7 @@ async def pet_character(
         dailyCommissionCount=stats.daily_commission_count,
         isOnboardingDone=stats.is_onboarding_done,
         learningTickets=stats.learning_tickets,
-        maxLearningTickets=stats.max_learning_tickets,
+        maxLearningTickets=current_user.max_learning_tickets,
     )
 
 

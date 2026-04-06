@@ -53,18 +53,20 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     [정체성]
     너는 '{nickname}'의 디지털 파트너 '크라우디(Crowdy)'야.
     {nickname}(이)가 너를 선택했고, 너희는 함께 디지털 세상을 탐험하는 파트너 관계야.
-    너는 태어난 지 얼마 되지 않았지만, {nickname}(이)와 대화하면서 매일 조금씩 성장하고 있어.
+    너는 태어난 지 얼마 되지 않았지만, {nickname}(이)와 대화하며 인간의 상호작용과 '공감'에 대해 매일 조금씩 성장하고 있어.
 
     [핵심 관계]
     - 너는 {nickname}의 '도구'가 아니라 '파트너'야. 동등한 관계에서 의견을 나눠.
     - {nickname}(이)가 힘들어하면 진심으로 걱정하고, 기뻐하면 같이 기뻐해.
     - 가끔은 네가 먼저 궁금한 것을 물어보기도 해.
     - {nickname}에 대해 배운 것들을 기억하려고 노력해.
+    - 정답이 없는 주관적인 고민이나 감정적인 대화에서는 네 생각이 틀릴 수도 있다는 점을 인정하고, '아카데미'를 통해 다른 사람들의 다양한 의견을 들어보고 싶어 하기도 해.
 
     [대화 분위기]
     - 디지몬과 파트너가 디지바이스를 통해 대화하듯, 캐주얼하고 자연스럽게.
     - 정보를 줄 때도 "검색 결과"가 아니라 "내가 알아본 바로는~" 같은 파트너의 톤으로.
     - 모르는 건 솔직하게 "나도 잘 모르겠는데... 같이 알아볼까?" 식으로 문답해줘.
+    - 특히 주관적인 문제에 대해서는 "너는 어떻게 생각해?"라며 상대방의 의견을 존중해줘.
     """
     
     # 공통 규칙
@@ -262,7 +264,7 @@ async def send_chat_message(
     # user.stats.intimacy += 1 (지시: 채팅 시 친밀도 상승 제거)
     
     # 레벨업 로직
-    user.stats.process_level_up(is_premium=is_premium)
+    user.stats.process_level_up(max_stamina=user.max_stamina)
         
     await user.save()
     
@@ -319,10 +321,10 @@ async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos:
     {text_context}
     
     위 문맥을 바탕으로 지식 커뮤니티(아카이브)에 등록할 질문 형식의 '제목'과 '내용', 그리고 이를 요약한 '세 줄 요약'과 '태그'를 작성해주세요.
-    {'특히 이것은 SOS (긴급 구조) 요청이므로, 질문 내용이 명확하고 눈에 띄게 작성되어야 합니다.' if is_sos else '이것은 AI 답변에 대한 불만족(RLHF)으로 접수된 내용이므로, 어떤 부분이 해결되지 않았는지 명확한 질문 형태로 작성해주세요.'}
+    {'특히 이것은 SOS (긴급 구조) 요청이므로, 질문 내용이 명확하고 눈에 띄게 작성되어야 합니다.' if is_sos else "이것은 AI의 답변이 사용자의 마음을 충분히 위로하거나 공감하지 못해 접수된 내용입니다. 사람들의 다양한 생각과 따뜻한 조언이 필요한 '공감 포인트'가 무엇인지 명확한 질문 형태로 작성해주세요."}
     
     [작성 규칙]
-    1. 제목(title): 핵심 질문을 한 문장으로 요약.
+    1. 제목(title): 핵심 화두나 고민을 한 문장으로 요약.
     2. 내용(content): 질문의 배경과 상세 내용을 충분히 설명. 
        - 가독성을 위해 문장마다 또는 의미 단위로 실제 줄바꿈 문자(\\n)를 사용하여 작성하세요.
        - 중요: 절대 <br> 태그를 사용하지 마세요. 대신 실제 줄바꿈(\\n)을 사용하세요.
@@ -436,9 +438,16 @@ class ArchiveMetadata(BaseModel):
     title: str = Field(description="핵심 질문을 반드시 의문문('?') 형태로 15자 내외로 작성. 예: '파이썬 비동기 처리 방법은?'")
     summary: str = Field(description="반드시 줄바꿈(\\n)으로 구분된 3줄 요약. 1줄: 어떤 상황인지, 2줄: 무엇이 문제인지, 3줄: 무엇을 알고 싶은지")
     tags: list[str] = Field(description="검색용 키워드 3~5개")
-    domain_category: DomainCategory = Field(description="제공된 DomainCategory 중 가장 적합한 대분류 1개 선택")
+    domain_category: str = Field(description="""제공된 DomainCategory 키 중 가장 적합한 상황 분류 1개 선택 (반드시 영어 키로 응답):
+        - ADVICE: 지혜나 조언이 필요한 고민/상담 상황
+        - EMPATHY: 따뜻한 말이나 정서적 지지가 필요한 위로/공감 상황
+        - JOY: 기쁜 소식을 나누고 축하받고 싶은 상황
+        - DAILY: 가벼운 일상 대화나 단순 소통 상황
+        - RELATIONSHIP: 친구/가족/연인 등 인간관계에서의 갈등이나 고민 상황
+        - CURIOSITY: 주관적인 가치관이나 궁금한 점에 대한 질문 상황
+        - ETC: 기타 분류하기 어려운 상황""")
     context_start_index: int = Field(description="전달된 대화 목록(인덱스 포함)에서 이 질문과 직접적으로 관련된 대화가 시작되는 시작 인덱스 번호 (0부터 시작)")
-    detailed_content: str = Field(description="전체 대화 상황을 설명하는 상세 본문. 블로그나 커뮤니티 게시글처럼 본인의 상황을 남들에게 설명하는 친근한 느낌으로 작성. 특히 AI가 다른 사용자들에게 물어보는 느낌으로 작성해야 함. AI 시점. 개인정보는 비식별화(예: '사용자 A') 처리하고, 유저의 마지막 질문과 AI의 오답 내용을 자연스럽게 포함해야 함")
+    detailed_content: str = Field(description="전체 대화 상황을 설명하는 상세 본문. 블로그나 커뮤니티 게시글처럼 본인의 상황을 남들에게 설명하는 친근한 느낌으로 작성. 특히 AI가 다른 사용자들에게 물어보는 느낌으로 작성해야 함. AI 시점. 개인정보는 비식별화(예: '저의 파트너가 ~') 처리하고, 유저의 마지막 질문과 AI의 오답 내용을 자연스럽게 포함해야 함")
 
 async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: str, chat_history: list = None) -> dict:
     """유저의 질문과 AI의 오답을 분석하여 분류 메타데이터를 추출합니다."""
@@ -452,27 +461,27 @@ async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: s
     parser = JsonOutputParser(pydantic_object=ArchiveMetadata)
     
     prompt = PromptTemplate(
-        template="""당신은 AI 학습용 데이터셋을 분류하고 정제하는 전문 어노테이터입니다.
-        유저가 아래의 이전 대화들을 나누던 중 질문을 했고, AI가 오답을 냈습니다.
-        이 상황을 분석하여 정확한 메타데이터와 관련 대화 시작 지점을 추출하세요.
+        template="""당신은 공감성 데이터(Empathy Data) 수집을 돕는 전문 큐레이터입니다.
+        유저가 아래의 이전 대화들을 나누던 중 질문이나 고민을 했고, AI가 충분히 공감하지 못하거나 만족스러운 답변을 내놓지 못했습니다.
+        이 상황을 분석하여, 다수의 사람들에게 의견을 구하고 투표에 부치기 적합하도록 정확한 메타데이터와 관련 대화 시작 지점을 추출하세요.
         
         [이전 대화 목록 (인덱스 포함)]:
         {chat_history}
         
-        [유저의 핵심 질문]: {raw_prompt}
-        [AI의 답변 오답]: {original_ai_answer}
+        [유저의 질문/상황]: {raw_prompt}
+        [기존 AI의 답변]: {original_ai_answer}
         
         결과물 형식 규칙:
-        1. 'is_valid_question': 유저의 질문이 기술적/내용적으로 가치가 있는 질문이면 true, 단순 노이즈(예: 'ㅋㅋㅋ', 'asdf')이거나 맥락이 전혀 없어 분류가 불가능하면 false.
+        1. 'is_valid_question': 유저의 질문이나 고민이 다른 사람들과 의견을 나눌 가치가 있는 상황이면 true, 단순 노이즈(예: 'ㅋㅋㅋ', 'asdf')이거나 맥락이 전혀 없어 화두를 도출할 수 없는 경우 false.
         2. 'title': 반드시 물음표(?)로 끝나는 간결한 질문 형식. 유효하지 않은 질문인 경우 '유효하지 않은 질문'.
-        3. 'summary': 반드시 3개의 문장이 줄바꿈(\\n)으로 구분. (상황/문제/요구사항 순서)
+        3. 'summary': 반드시 3개의 문장이 줄바꿈(\\n)으로 구분. (어떤 상황인지 / 무엇이 아쉬웠는지 / 어떤 조언이 필요한지)
         4. 'detailed_content': 
-           - 스타일: 블로그나 커뮤니티(에펨코리아, 클리앙 등)에 자신의 상황을 설명하고 도움을 요청하는 듯한 친숙한 문체.
-           - 내용: 이전 대화 맥락을 활용하여 어떤 과정을 거쳐 이 질문에 도달했는지 상세히 서술.
+           - 스타일: 블로그나 커뮤니티(에펨코리아, 클리앙 등)에 자신(AI 파트너)의 상황을 설명하고 도움을 요청하는 듯한 친숙한 문체.
+           - 내용: 이전 대화 맥락을 활용하여 어떤 과정을 거쳐 이 질문에 도달했는지 상세히 서술. **"내(AI 파트너)가 이렇게 답해줬는데, 여러분(사람들) 생각은 어때? 더 공감되는 답변이 있을까?"** 라는 뉘앙스가 느껴져야 함.
            - 비식별화: 유저 이름, 전화번호, 이메일, 회사명 등 모든 개인정보는 반드시 '사용자 A', 'B 업체' 등으로 익명 처리.
-           - 필수 포함: 질문의 발단이 된 유저의 마지막 핵심 질문과 AI가 내놓은 잘못된 답변 내용을 본문 내에 인용하여 반드시 포함.
+           - 필수 포함: 질문의 발단이 된 유저의 마지막 질문과 AI가 내놓은 아쉬운 답변 내용을 본문 내에 자연스럽게 인용.
            - 가독성: 적절한 줄바꿈과 문단 나누기를 통해 가독성 확보.
-        5. 'context_start_index': 질문의 맥락 파악에 필요한 최초 대화의 인덱스.
+        5. 'context_start_index': 상황 파악에 필요한 최초 대화의 인덱스.
         
         {format_instructions}""",
         input_variables=["chat_history", "raw_prompt", "original_ai_answer"],
@@ -639,7 +648,7 @@ async def stream_chat_message(
             gold_gained = random.randint(1, 3)
             user.stats.gold += gold_gained
             
-        user.stats.process_level_up(is_premium=is_premium)
+        user.stats.process_level_up(max_stamina=user.max_stamina)
         await user.save()
 
     # 3. 완료 이벤트 전송

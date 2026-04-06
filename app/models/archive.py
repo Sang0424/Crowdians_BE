@@ -4,22 +4,17 @@ from datetime import datetime, timezone
 
 from enum import Enum
 from beanie import Document
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class DomainCategory(str, Enum):
-    IT_PROGRAMMING = "IT/프로그래밍"
-    LAW_TAX = "법률/세무"
-    SCIENCE_TECH = "과학/기술"
-    DAILY_LIFE = "일상/생활"
-    CREATIVE_WRITING = "창작/글쓰기"
+    ADVICE = "고민/상담"
+    EMPATHY = "위로/공감"
+    JOY = "기쁨/축하"
+    DAILY = "일상/소통"
+    RELATIONSHIP = "관계/갈등"
+    CURIOSITY = "질문/호기심"
     ETC = "기타"
-
-
-class ConversationSnapshot(BaseModel):
-    """Unlike/SOS 제출 시점 기준 대화 내역 스냅샷"""
-    role: str      # "user" | "model"
-    content: str
 
 
 class ConversationSnapshot(BaseModel):
@@ -57,10 +52,33 @@ class ArchivePost(Document):
     raw_prompt: str = Field(default="", description="유저가 입력한 최초 질문 원본")
     original_ai_answer: str = Field(default="", description="불만족 평가를 받은 AI의 최초 오답 원본")
     domain_category: DomainCategory = Field(default=DomainCategory.ETC, description="데이터 판매용 대분류")
+
+    @field_validator("domain_category", mode="before")
+    @classmethod
+    def validate_domain_category(cls, v):
+        if isinstance(v, str):
+            # 1. 값(Value)으로 매칭 시도 (예: "고민/상담")
+            for member in DomainCategory:
+                if member.value == v:
+                    return member
+            # 2. 이름(Name)으로 매칭 시도 (예: "CURIOSITY" or "curiosity")
+            try:
+                return DomainCategory[v.upper()]
+            except KeyError:
+                pass
+            # 3. 매칭 실패 시 기본값
+            return DomainCategory.ETC
+        return v
+
+    is_valid_question: bool | None = Field(default=None, description="유효한 질문 여부 (None: 미분류, True: 유효, False: 무효)")
+    context_start_index: int = Field(default=0, description="관련 대화 시작 인덱스")
     chat_context: list[ConversationSnapshot] = Field(
         default_factory=list, 
         description="관련 대화 내역 (비공개, DB 전용)"
     )
+    detailed_content: str = Field(default="", description="상세 본문 (AI 시점의 커뮤니티 요청형 문구)")
+    
+    source: str | None = Field(default=None, description="데이터 출처 (예: 'huggingface')")
     
     # 답변들의 ID 목록 (ArchiveAnswer Document의 id)
     # 또는 역방향 참조를 위해 안 들고 있어도 무방합니다. (보통 RDBMS처럼)
@@ -83,6 +101,7 @@ class ArchiveAnswer(Document):
     
     trust_count: int = 0                        # "신뢰함" 받은 횟수
     voted_user_ids: list[str] = Field(default_factory=list)  # 중복 투표 방지를 위한 uid 목록
+    is_golden: bool = False                     # [추가] 골든 배지 부여 여부
     
     createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

@@ -12,16 +12,13 @@ def check_daily_reset(user: User) -> bool:
     is_reset = False
     
     if user.stats.last_daily_reset != today_str:
-        user.stats.learning_tickets = user.stats.max_learning_tickets
+        user.stats.learning_tickets = user.max_learning_tickets
         user.stats.daily_chat_exp = 0
         user.stats.daily_sos_count = 0        # SOS 횟수 초기화
         user.stats.daily_commission_count = 0  # 지정 질문 횟수 초기화
         
-        # 프리미엄 유저는 스태미나 충전 불필요 (항상 999)
-        if user.subscription_plan == "premium":
-            user.stats.stamina = 999
-        else:
-            user.stats.stamina = user.stats.max_stamina
+        # 스태미나 충전 (프리미엄 100+성장 / 일반 20+성장)
+        user.stats.stamina = user.max_stamina
             
         user.stats.last_daily_reset = today_str
         is_reset = True
@@ -54,7 +51,7 @@ async def sync_guest_stats(user: User, exp_gained: int, stamina_consumed: int, i
     stats.stamina = max(0, stats.stamina - stamina_consumed)
     
     # 레벨업 처리
-    stats.process_level_up()
+    stats.process_level_up(max_stamina=user.max_stamina)
         
     return await user_repo.update(db_obj=user, obj_in=user)
 

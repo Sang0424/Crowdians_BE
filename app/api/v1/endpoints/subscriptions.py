@@ -7,7 +7,7 @@ from starlette.responses import JSONResponse
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services.subscription_service import SubscriptionService
-from app.schemas.subscription import SubscriptionStatusResponse, CheckoutURLResponse
+from app.schemas.subscription import SubscriptionStatusResponse, CheckoutURLResponse, CustomerPortalResponse
 
 router = APIRouter()
 
@@ -68,3 +68,13 @@ async def get_subscription_status(current_user: User = Depends(get_current_user)
         dailySosRemaining=max(0, sos_limit - current_user.stats.daily_sos_count),
         dailyCommissionRemaining=max(0, commission_limit - current_user.stats.daily_commission_count)
     )
+
+@router.get(
+    "/portal",
+    response_model=CustomerPortalResponse,
+    summary="구독 관리 포털 URL 조회",
+    description="로그인한 유저가 구독을 관리할 수 있는 Lemon Squeezy 포털 페이지(Signed URL)를 조회합니다."
+)
+async def get_portal_url(current_user: User = Depends(get_current_user)):
+    url = await SubscriptionService.get_customer_portal_url(current_user)
+    return CustomerPortalResponse(portalUrl=url)

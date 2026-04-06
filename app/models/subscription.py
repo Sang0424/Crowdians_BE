@@ -10,9 +10,9 @@ class SubscriptionEvent(Document):
     event_name: str                 # subscription_created, subscription_updated, etc.
     lemonsqueezy_id: str            # Lemon Squeezy측 ID
     order_id: Optional[int] = None
-    customer_id: int
-    subscription_id: int
-    variant_id: int
+    customer_id: Optional[int] = None
+    subscription_id: Optional[int] = None
+    variant_id: Optional[int] = None
     status: str                     # active, on_trial, cancelled, expired
     renews_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None

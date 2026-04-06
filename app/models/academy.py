@@ -12,6 +12,7 @@ class KnowledgeCard(Document):
     question: str                   # 질문 제목 또는 요약
     content: str | None = None      # 질문 상세 내용
     summary: str | None = None      # 질문 요약 (ArchivePost 연동 시 복사)
+    locale: str = Field(default="ko", description="언어 설정")
     choices: list[str] = Field(default_factory=list)
     correct_answer: str | int = ""  # 정답 (번호일 수도 있고 텍스트일 수도 있음)
     honeypot_answer: str = Field(default="", description="매크로/어뷰징 유저를 걸러내기 위한 함정 오답")

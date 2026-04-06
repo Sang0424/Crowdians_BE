@@ -30,7 +30,7 @@ class SubscriptionService:
                         "email": user.email or ""
                     },
                     "product_options": {
-                        "redirect_url": f"{settings.FRONTEND_URL}/settings/subscription?success=true"
+                        "redirect_url": f"{settings.FRONTEND_URL}/?success=subscription"
                     }
                 },
                 "relationships": {
@@ -121,9 +121,21 @@ class SubscriptionService:
             print(f"User not found for Webhook: {uid}")
             return
 
-        # 구독 정보 추출
-        sub_id = data.get("id")
-        customer_id = attributes.get("customer_id")
+        # 구독 정보 추출 (안전하게)
+        obj_id = data.get("id")
+        obj_type = data.get("type") # 'subscriptions', 'subscription_invoices' 등
+        
+        # subscription_id 결정: 
+        # type이 'subscriptions'이면 id가 subscription_id.
+        # type이 'subscription_invoices'이면 id는 invoice_id이고, attributes 내부에 subscription_id가 있음.
+        if obj_type == "subscriptions":
+            subscription_id = SubscriptionService._safe_int(obj_id)
+        else:
+            subscription_id = SubscriptionService._safe_int(attributes.get("subscription_id"))
+            
+        customer_id = SubscriptionService._safe_int(attributes.get("customer_id"))
+        variant_id = SubscriptionService._safe_int(attributes.get("variant_id"))
+        order_id = SubscriptionService._safe_int(attributes.get("order_id"))
         status = attributes.get("status")  # pydantic/lemonsqueezy docs 참고: active, cancelled, expired 등
         
         # 만료일/갱신일 처리
@@ -136,11 +148,12 @@ class SubscriptionService:
         # 1. 구독 이벤트 기록
         event = SubscriptionEvent(
             event_name=event_name,
-            lemonsqueezy_id=str(sub_id),
+            lemonsqueezy_id=str(obj_id),
+            order_id=order_id,
             customer_id=customer_id,
-            subscription_id=int(sub_id),
-            variant_id=int(attributes.get("variant_id")),
-            status=status,
+            subscription_id=subscription_id,
+            variant_id=variant_id,
+            status=status or "unknown",
             renews_at=renews_at,
             ends_at=ends_at,
             uid=uid,
@@ -149,8 +162,11 @@ class SubscriptionService:
         await event.insert()
 
         # 2. 유저 상태 업데이트
-        if event_name in ["subscription_created", "subscription_updated"]:
-            if status in ["active", "on_trial"]:
+        is_upgrade = False
+        if event_name in ["subscription_created", "subscription_updated", "subscription_payment_success"]:
+            if status in ["active", "on_trial", "paid"]:
+                if user.subscription_plan != "premium":
+                    is_upgrade = True
                 user.subscription_plan = "premium"
                 # 만료일은 renews_at 또는 ends_at 중 있는 것으로 설정
                 user.subscription_expires_at = renews_at or ends_at
@@ -166,14 +182,68 @@ class SubscriptionService:
             user.subscription_plan = "free"
             user.subscription_expires_at = None
 
-        # 프리미엄 유저라면 스태미나 충전/무제한 처리
+        # 3. 프리미엄 업그레이드 시 티켓 및 스태미나 처리
         if user.subscription_plan == "premium":
-            user.stats.stamina = 999
+            user.stats.stamina = user.max_stamina
+            
+            # 신규 구독 시 티켓 소급 적용 (10장 - 오늘 사용량)
+            if is_upgrade:
+                # 사용량 = 기존 최대치 - 현재 남은 수
+                # user.max_learning_tickets는 현재 플랜 기준이므로 프리미엄 변경 전 값을 사용해야 함
+                # 하지만 위에서 이미 user.subscription_plan = "premium"을 했으므로 
+                # property인 max_learning_tickets는 10을 반환함.
+                # 따라서 업그레이드 전의 최대치를 알아야 함.
+                # 일반 유저는 기본 3 + 신뢰도 보너스
+                old_max = 3 + (user.stats.trust - 1000) // 200
+                used_today = max(0, old_max - user.stats.learning_tickets)
+                user.stats.learning_tickets = max(0, 10 - used_today)
+                print(f"User {uid} upgraded to premium. Tickets updated: {user.stats.learning_tickets}/10 (used: {used_today})")
         
         user.lemonsqueezy_customer_id = str(customer_id)
-        user.lemonsqueezy_subscription_id = str(sub_id)
+        user.lemonsqueezy_subscription_id = str(subscription_id)
         
         await user.save()
+
+    @staticmethod
+    async def get_customer_portal_url(user: User) -> str:
+        """Lemon Squeezy Customer Portal URL(Signed) 가져오기"""
+        # 스토어 미승인 상태이거나 구독 ID가 없으면 상시 빌링 페이지로 연결
+        billing_url = f"https://{settings.LEMONSQUEEZY_STORE_SUBDOMAIN}.lemonsqueezy.com/billing"
+        
+        if not user.lemonsqueezy_subscription_id:
+            return billing_url
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    f"{SubscriptionService.LEMONSQUEEZY_API_URL}/subscriptions/{user.lemonsqueezy_subscription_id}",
+                    headers={
+                        "Authorization": f"Bearer {settings.LEMONSQUEEZY_API_KEY}",
+                        "Accept": "application/vnd.api+json"
+                    },
+                    timeout=5.0
+                )
+
+                if response.status_code != 200:
+                    print(f"Lemon Squeezy API Error (Status {response.status_code}): {response.text}")
+                    return billing_url
+
+                data = response.json()
+                portal_url = data.get("data", {}).get("attributes", {}).get("urls", {}).get("customer_portal")
+                
+                return portal_url or billing_url
+            except Exception as e:
+                print(f"Error fetching Lemon Squeezy portal: {e}")
+                return billing_url
+
+    @staticmethod
+    def _safe_int(value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
 
     @staticmethod
     def _parse_date(date_str: Optional[str]) -> Optional[datetime]:

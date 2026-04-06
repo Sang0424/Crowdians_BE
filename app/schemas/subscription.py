@@ -16,3 +16,6 @@ class CheckoutURLResponse(BaseModel):
 
 class CancelSubscriptionRequest(BaseModel):
     reason: Optional[str] = None
+
+class CustomerPortalResponse(BaseModel):
+    portalUrl: str

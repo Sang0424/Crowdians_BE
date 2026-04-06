@@ -159,3 +159,8 @@ cython_debug/
 # Custom
 firebase-admin-sdk.json
 
+# scripts
+scripts/*
+
+# data
+migration.log

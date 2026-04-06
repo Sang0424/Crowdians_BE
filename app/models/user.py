@@ -27,30 +27,16 @@ class UserStats(BaseModel):
     is_onboarding_done: bool = False # 온보딩 완료 여부
     title: str = ""               # 칭호 (텍스트 기반 보상)
 
-    @property
     def max_exp(self) -> int:
         """레벨업에 필요한 경험치: 50 * level^1.6"""
         return round(50 * (self.level ** 1.6))
 
-    @property
-    def max_stamina(self) -> int:
-        """최대 스태미너: 20 + (친밀도 // 50)"""
-        return 20 + (self.intimacy // 50)
-
-    @property
-    def max_learning_tickets(self) -> int:
-        """최대 아카데미 티켓 수: 3 + (신뢰도 // 200)"""
-        return 3 + (self.trust - 1000) // 200
-
-    def process_level_up(self, is_premium: bool = False):
+    def process_level_up(self, max_stamina: int):
         """경험치가 넘칠 경우 레벨업을 반복 처리(while)하고 스태미나를 완충합니다."""
         while self.exp >= self.max_exp:
             self.exp -= self.max_exp
             self.level += 1
-            if not is_premium:
-                self.stamina = self.max_stamina
-            else:
-                self.stamina = 999 # 프리미엄은 사실상 무제한
+            self.stamina = max_stamina
 
 
 class EquippedParts(BaseModel):
@@ -89,6 +75,19 @@ class User(Document):
     role: str = "user"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def max_stamina(self) -> int:
+        """최대 스태미너 (프리미엄 기초 100 / 일반 기초 20) + 성장분"""
+        base = 100 if self.subscription_plan == "premium" else 20
+        return base + (self.stats.intimacy // 50)
+
+    @property
+    def max_learning_tickets(self) -> int:
+        """최대 아카데미 티켓 수: 프리미엄 10장 / 일반 (3 + 신뢰도 보너스)"""
+        if self.subscription_plan == "premium":
+            return 10
+        return 3 + (self.stats.trust - 1000) // 200
 
     class Settings:
         name = "users"                          # MongoDB collection name
