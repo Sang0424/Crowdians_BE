@@ -32,7 +32,7 @@ async def list_rankings(
                 trust=u.stats.trust,
                 courage=u.stats.courage,
                 stamina=u.stats.stamina,
-                maxStamina=u.stats.max_stamina,
+                maxStamina=u.max_stamina,
                 gold=u.stats.gold,
                 learningTickets=u.stats.learning_tickets,
                 intelligence=u.stats.intelligence,

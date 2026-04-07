@@ -10,6 +10,12 @@ from app.services.user_service import check_daily_reset
 
 async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> list[dict]:
     """일일 지식카드 5장을 조회합니다. (ArchivePost 연동 카드 및 일반 퀴즈)"""
+    # 0. 로케일 정규화 (en-US -> en 등)
+    if locale and len(locale) > 2:
+        locale = locale[:2].lower()
+    
+    print(f"[Academy] Fetching cards for User: {user.uid}, Locale: {locale}, Ticket: {ticket_index}")
+
     # 1. 일일 초기화 체크
     if check_daily_reset(user):
         await user.save()
@@ -27,8 +33,9 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
     my_post_ids = [str(p.id) for p in my_posts]
 
     excluded_linked_ids = list(set(answered_post_ids + my_post_ids))
+    print(f"[Academy] Excluded Linked IDs: {len(excluded_linked_ids)}")
 
-    # 3. 공통 제외 쿼리 생성 (언어 필터 추가)
+    # 3. 공용 제외 쿼리 생성 (언어 필터 추가)
     query_filters = [
         KnowledgeCard.is_migrated == False,
         KnowledgeCard.locale == locale
@@ -38,24 +45,21 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
         query_filters.append(
             Or(
                 KnowledgeCard.linked_post_id == None,
+                KnowledgeCard.linked_post_id == "",
                 NotIn(KnowledgeCard.linked_post_id, excluded_linked_ids)
             )
         )
     
-    base_filter = KnowledgeCard.find(*query_filters)
-
     import random
     
     # ── 1단계: Vote 타입 우선 확보 (최대한 3장) ──
-    vote_cards = await base_filter.find(
-        KnowledgeCard.type == "vote"
-    ).sort([("priority", -1), ("created_at", -1)]).limit(3).to_list()
+    vote_cards = await KnowledgeCard.find(*query_filters, KnowledgeCard.type == "vote").sort([("priority", -1), ("created_at", -1)]).limit(3).to_list()
+    print(f"[Academy] Obtained Vote Cards: {len(vote_cards)}")
     
     # ── 2단계: 부족한 만큼 Teach 타입으로 채우기 (최대 5장 확보를 목표) ──
     needed_teach = 5 - len(vote_cards)
-    teach_cards = await base_filter.find(
-        KnowledgeCard.type == "teach"
-    ).sort([("priority", -1), ("created_at", -1)]).limit(needed_teach).to_list()
+    teach_cards = await KnowledgeCard.find(*query_filters, KnowledgeCard.type == "teach").sort([("priority", -1), ("created_at", -1)]).limit(needed_teach).to_list()
+    print(f"[Academy] Obtained Teach Cards: {len(teach_cards)}")
     
     total_cards = vote_cards + teach_cards
     
@@ -63,25 +67,27 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
     if len(total_cards) < 5:
         existing_ids = [c.id for c in total_cards]
         needed_extra = 5 - len(total_cards)
-        extra_cards = await base_filter.find(
+        extra_cards = await KnowledgeCard.find(
+            *query_filters,
             NotIn(KnowledgeCard.id, existing_ids)
         ).sort([("priority", -1), ("created_at", -1)]).limit(needed_extra).to_list()
         total_cards += extra_cards
+        print(f"[Academy] Obtained Extra Cards: {len(extra_cards)}")
     
+    print(f"[Academy] Total Final Cards: {len(total_cards)}")
     # 다양한 노출을 위해 섞어줌
     random.shuffle(total_cards)
-
-    # ── 각 카드별 연동 포스트의 chat_context 추가 ──
-    from app.models.archive import ArchivePost
-    from bson import ObjectId
 
     card_list = []
     for c in total_cards:
         chat_context = []
         if c.linked_post_id:
-            post = await ArchivePost.get(ObjectId(c.linked_post_id))
-            if post and post.chat_context:
-                chat_context = [m.model_dump() for m in post.chat_context]
+            try:
+                post = await ArchivePost.get(ObjectId(c.linked_post_id))
+                if post and post.chat_context:
+                    chat_context = [m.model_dump() for m in post.chat_context]
+            except Exception as e:
+                print(f"[Academy] Failed to fetch linked post {c.linked_post_id}: {e}")
         
         card_list.append({
             "id": str(c.id),
@@ -93,6 +99,8 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
             "linked_post_id": c.linked_post_id,
             "chat_context": chat_context
         })
+
+    return card_list
 
     return card_list
 

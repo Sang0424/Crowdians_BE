@@ -40,7 +40,7 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             maxExp=user.stats.max_exp,
             gold=user.stats.gold,
             stamina=user.stats.stamina,
-            maxStamina=user.stats.max_stamina,
+            maxStamina=user.max_stamina,
             trust=user.stats.trust,
             intelligence=user.stats.intelligence,
             courage=user.stats.courage,
@@ -87,7 +87,7 @@ async def get_my_profile(
     
     # 초과된 경험치가 있다면 레벨업 소급 적용
     old_level = current_user.stats.level
-    current_user.stats.process_level_up()
+    current_user.stats.process_level_up(max_stamina=current_user.max_stamina)
     if current_user.stats.level != old_level:
         is_updated = True
         
@@ -192,7 +192,7 @@ async def sync_guest_stats(
         maxExp=stats.max_exp,
         gold=stats.gold,
         stamina=stats.stamina,
-        maxStamina=stats.max_stamina,
+        maxStamina=updated_user.max_stamina,
         trust=stats.trust,
         intelligence=stats.intelligence,
         courage=stats.courage,
@@ -250,7 +250,7 @@ async def pet_character(
         maxExp=stats.max_exp,
         gold=stats.gold,
         stamina=stats.stamina,
-        maxStamina=stats.max_stamina,
+        maxStamina=current_user.max_stamina,
         trust=stats.trust,
         intelligence=stats.intelligence,
         courage=stats.courage,

@@ -668,8 +668,13 @@ async def process_archive_task_background(
         )
         
         # [NEW] 질문 유효성 검사 및 필터링 (기본값 False로 더 엄격하게 처리)
-        if not metadata.get("is_valid_question", False):
-            print(f"Skipping archive task for user {user.uid} due to invalid question metadata.")
+        title = metadata.get("title", "")
+        title_lower = title.lower()
+        invalid_keywords = ["유효하지 않는", "유효하지 않은", "invalid question", "無효한 질문", "無効な質問"]
+        is_title_invalid = any(kw in title_lower for kw in invalid_keywords)
+
+        if not metadata.get("is_valid_question", False) or is_title_invalid:
+            print(f"Skipping archive task for user {user.uid} due to invalid question metadata (title: {title}).")
             # 사용자에게 거절 사유 안내 메일 발송
             reason = metadata.get('summary') or get_text("archive.default.reason", locale)
             await send_system_mail(

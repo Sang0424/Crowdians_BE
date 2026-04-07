@@ -22,7 +22,7 @@ def user_to_response(user: User) -> UserResponse:
             maxExp=user.stats.max_exp,
             gold=user.stats.gold,
             stamina=user.stats.stamina,
-            maxStamina=user.stats.max_stamina,
+            maxStamina=user.max_stamina,
             trust=user.stats.trust,
             intelligence=user.stats.intelligence,
             courage=user.stats.courage,

@@ -27,6 +27,7 @@ class UserStats(BaseModel):
     is_onboarding_done: bool = False # 온보딩 완료 여부
     title: str = ""               # 칭호 (텍스트 기반 보상)
 
+    @property
     def max_exp(self) -> int:
         """레벨업에 필요한 경험치: 50 * level^1.6"""
         return round(50 * (self.level ** 1.6))
