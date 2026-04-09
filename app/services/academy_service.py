@@ -1,6 +1,7 @@
 # app/services/academy_service.py
 
 from datetime import datetime, timezone
+from bson import ObjectId
 
 from app.models.user import User
 from app.models.academy import KnowledgeCard, CardResponse
@@ -32,13 +33,22 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
     my_posts = await ArchivePost.find(ArchivePost.author_id == user.uid).to_list()
     my_post_ids = [str(p.id) for p in my_posts]
 
-    excluded_linked_ids = list(set(answered_post_ids + my_post_ids))
-    print(f"[Academy] Excluded Linked IDs: {len(excluded_linked_ids)}")
+    # 🌟 [추가] 유효하지 않은 질문(is_valid_question == False) 제외
+    invalid_posts = await ArchivePost.find(ArchivePost.is_valid_question == False).to_list()
+    invalid_post_ids = [str(p.id) for p in invalid_posts]
 
-    # 3. 공용 제외 쿼리 생성 (언어 필터 추가)
+    excluded_linked_ids = list(set(answered_post_ids + my_post_ids + invalid_post_ids))
+    print(f"[Academy] Excluded Linked IDs: {len(excluded_linked_ids)} (Reason: Answered, Own, or Invalid)")
+
+    # 3. 직접 응답한 카드(CardResponse) ID 목록 조회
+    responded_records = await CardResponse.find(CardResponse.user_id == user.uid).to_list()
+    responded_card_ids = [ObjectId(rec.card_id) for rec in responded_records]
+    
+    # 4. 공용 제외 쿼리 생성 (언어 필터 추가)
     query_filters = [
         KnowledgeCard.is_migrated == False,
-        KnowledgeCard.locale == locale
+        KnowledgeCard.locale == locale,
+        NotIn(KnowledgeCard.id, responded_card_ids)
     ]
     
     if excluded_linked_ids:
@@ -75,20 +85,18 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
         print(f"[Academy] Obtained Extra Cards: {len(extra_cards)}")
     
     print(f"[Academy] Total Final Cards: {len(total_cards)}")
+    if not total_cards:
+        # Check if cards exist in DB without the is_migrated filter
+        total_in_db = await KnowledgeCard.find(KnowledgeCard.locale == locale).count()
+        if total_in_db > 0:
+            print(f"[Academy] Warning: {total_in_db} cards exist in DB for locale '{locale}', but 0 matched filters (is_migrated=False). Check is_migrated flags.")
+        else:
+            print(f"[Academy] Warning: 0 cards found in DB for locale '{locale}'.")
     # 다양한 노출을 위해 섞어줌
     random.shuffle(total_cards)
 
     card_list = []
     for c in total_cards:
-        chat_context = []
-        if c.linked_post_id:
-            try:
-                post = await ArchivePost.get(ObjectId(c.linked_post_id))
-                if post and post.chat_context:
-                    chat_context = [m.model_dump() for m in post.chat_context]
-            except Exception as e:
-                print(f"[Academy] Failed to fetch linked post {c.linked_post_id}: {e}")
-        
         card_list.append({
             "id": str(c.id),
             "type": c.type,
@@ -96,8 +104,7 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
             "content": c.content,
             "summary": c.summary or "",
             "choices": c.choices,
-            "linked_post_id": c.linked_post_id,
-            "chat_context": chat_context
+            "linked_post_id": c.linked_post_id
         })
 
     return card_list
@@ -124,7 +131,7 @@ async def start_academy_session(user: User) -> dict:
         "learningTickets": user.stats.learning_tickets
     }
 
-async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dict:
+async def submit_card_answer(user: User, card_id: str, answer: str | int, background_tasks: any = None) -> dict:
     """지식 카드 응답을 제출하고 정답 여부를 판별하여 보상을 지급합니다."""
     # 1. 일일 초기화 및 티켓 검사
     if check_daily_reset(user):
@@ -144,7 +151,12 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
     if getattr(card, "linked_post_id", None):
         from app.services.archive_service import submit_archive_answer
         try:
-            await submit_archive_answer(user, card.linked_post_id, str(answer))
+            await submit_archive_answer(
+                user, 
+                card.linked_post_id, 
+                str(answer),
+                background_tasks=background_tasks
+            )
         except Exception as e:
             print(f"Failed to submit archive answer via academy: {e}")
 
@@ -195,10 +207,12 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         exp_gained = 10      # 기본 EXP
         gold_gained = 5     # 기본 Gold
         trust_gained = 1     # 신뢰도 상승
+        int_gained = 3 if card.type == "teach" else 1 # 지능 상승
         
         user.stats.exp += exp_gained
         user.stats.gold += gold_gained
         user.stats.trust += trust_gained
+        user.stats.intelligence += int_gained
         
         # 레벨업 판정
         user.stats.process_level_up(max_stamina=user.max_stamina)
@@ -232,6 +246,7 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int) -> dic
         "rewardExp": exp_gained,
         "rewardGold": gold_gained,
         "rewardTrust": trust_gained,
+        "rewardIntelligence": int_gained if is_correct else 0,
         "message": message
     }
 
@@ -325,10 +340,12 @@ async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_
     exp_gained = 10
     gold_gained = 5
     trust_gained = 1
+    int_gained = 1
     
     user.stats.exp += exp_gained
     user.stats.gold += gold_gained
     user.stats.trust += trust_gained
+    user.stats.intelligence += int_gained
     user.stats.process_level_up(max_stamina=user.max_stamina)
     await user.save()
 
@@ -395,5 +412,6 @@ async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_
         "rewardExp": exp_gained,
         "rewardGold": gold_gained,
         "rewardTrust": trust_gained,
+        "rewardIntelligence": int_gained,
         "message": f"투표가 반영되었습니다. (영향력: {voting_weight}점)"
     }

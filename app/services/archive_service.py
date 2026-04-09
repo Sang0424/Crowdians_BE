@@ -44,14 +44,47 @@ async def create_archive_post(
                     code="LIMIT_EXCEEDED_SOS"
                 )
         if target_user_id:
-            if user.stats.daily_commission_count >= 1:
-                raise DomainError(
-                    message="Commission limit exceeded",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    code="LIMIT_EXCEEDED_COMMISSION"
-                )
+            # ── [NEW] 직접 의뢰 정책 상향 (1회 -> 3회) 및 비용(100 Gold) 추가 ──
+            if user.subscription_plan != "premium":
+                # 1. 횟수 제한 체크 (3회)
+                if user.stats.daily_commission_count >= 3:
+                    raise DomainError(
+                        message="Commission limit exceeded",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        code="LIMIT_EXCEEDED_COMMISSION"
+                    )
+                # 2. 비용 체크 (100 Gold)
+                if user.stats.gold < 100:
+                    raise DomainError(
+                        message="Insufficient Gold",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        code="INSUFFICIENT_GOLD"
+                    )
+                # 3. 비용 차감 및 횟수 증가
+                user.stats.gold -= 100
+                user.stats.daily_commission_count += 1
 
     # 직접 의뢰(Direct Commission)인 경우 상태를 'commissioned'로 설정
+    # ── Normalize Locale ──
+    if locale and len(locale) > 2:
+        locale = locale[:2].lower()
+
+    # ── Check for "Invalid" questions (Automatic creation fail) ──
+    invalid_keywords = ["유효하지 않는", "유효하지 않은", "Invalid question", "無効な質問", "Invalid choice"]
+    is_invalid = any(kw.lower() in title.lower() or kw.lower() in content.lower() for kw in invalid_keywords)
+
+    if is_invalid:
+        # Do not create ArchivePost, send failure mail instead
+        await send_system_mail(
+            user_id=user.uid,
+            title=get_text("archive.failure.title", locale, default="데이터 등록 실패 알림"),
+            content=get_text("archive.failure.content", locale, default="죄송합니다. 요청하신 내용이 유효하지 않아 등록에 실패하였습니다."),
+            mail_type="system_notice"
+        )
+        # We can still return something or raise an error, but as per request, just fail the process
+        print(f"[Archive] Post creation failed (Invalid logic): {title}")
+        return ""
+
     post_status = "commissioned" if target_user_id else "open"
     
     post = await archive_repo.create(obj_in={
@@ -93,7 +126,7 @@ async def create_archive_post(
 
         card = KnowledgeCard(
             type="teach",
-            question=f"[{category}] {title}",
+            question=title,
             content=content,
             summary=summary,
             choices=[],
@@ -233,7 +266,7 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
     }
 
 
-async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
+async def submit_archive_answer(user: User, post_id: str, content: str, background_tasks: any = None) -> str:
     """질문에 답변을 작성합니다."""
     try:
         post = await archive_repo.get_by_id(post_id)
@@ -257,64 +290,15 @@ async def submit_archive_answer(user: User, post_id: str, content: str) -> str:
     })
     
     # ── [NEW] 지식 카드(Vote 타입) 동적 생성 ──
-    # 일반 질문(is_sos가 아니거나 target_user_id가 없는 경우 등)에 대해 
-    # RLHF를 위한 선택형(Vote) 문제를 자동 생성합니다.
+    # 이 과정은 AI 호출을 포함하므로 백그라운드 태스크로 처리하는 것을 권장합니다.
+    # 만약 background_tasks가 전달되면 백그라운드에서 실행합니다.
     if not post.target_user_id:
-        import random
-        from app.models.academy import KnowledgeCard
-        
-        # ── [NEW] 문제 타입 비율 조절: 게시글당 Vote 카드는 최대 3개까지만 ──
-        vote_count = await KnowledgeCard.find(
-            KnowledgeCard.linked_post_id == post_id,
-            KnowledgeCard.type == "vote"
-        ).count()
-        
-        if vote_count < 3:
-            choices = []
-            # 현재 이 답변을 제외한 기존 답변들을 가져옵니다.
-            existing_answers = await ArchiveAnswer.find(
-                ArchiveAnswer.post_id == post_id,
-                ArchiveAnswer.id != answer.id
-            ).to_list()
-            
-            if not existing_answers:
-                # 첫 번째 유저 답변인 경우: LLM이 작성한 요약(summary)과 비교
-                if post.summary:
-                    choices = [post.summary, content]
-            else:
-                # 두 번째 이상의 답변인 경우: 기존 답변 중 하나를 랜덤으로 골라 비교
-                other_ans = random.choice(existing_answers)
-                choices = [other_ans.content, content]
-                
-            if len(choices) == 2:
-                # 보기가 2개 준비되었다면 Vote 카드 생성
-                # 순서를 섞어줌 (유저 답변이 항상 뒤에 나오지 않도록)
-                random.shuffle(choices)
-                
-                # ── [NEW] 약 40% 확률로 허니팟(Honeypot) 추가 ──
-                honeypot_answer = ""
-                if random.random() < 0.4:
-                    try:
-                        honeypot_answer = await generate_honeypot_answer(post.content)
-                        if honeypot_answer and honeypot_answer not in choices:
-                            choices.append(honeypot_answer)
-                            random.shuffle(choices)
-                    except Exception as e:
-                        print(f"Honeypot generation skipped: {e}")
-
-                vote_card = KnowledgeCard(
-                    type="vote",
-                    question=f"{post.title}",
-                    content=post.content,
-                    summary=post.summary,
-                    choices=choices,
-                    correct_answer="",  # 다수결 방식이므로 정답 없음
-                    honeypot_answer=honeypot_answer,
-                    priority=50 if post.is_sos else 0,
-                    linked_post_id=post_id,
-                    source_message_id=str(answer.id)
-                )
-                await vote_card.insert()
+        from fastapi import BackgroundTasks
+        if isinstance(background_tasks, BackgroundTasks):
+            background_tasks.add_task(_generate_vote_card_background, user, post_id, str(answer.id))
+        else:
+            # 하위 호환성 또는 동기 처리가 필요한 경우
+            await _generate_vote_card_background(user, post_id, str(answer.id))
 
     # 캐싱용 answer_count 증가
     post.answer_count += 1
@@ -722,3 +706,78 @@ async def process_archive_task_background(
         import traceback
         print(f"Error in background archive task: {e}")
         traceback.print_exc()
+
+async def _generate_vote_card_background(user: User, post_id: str, answer_id: str):
+    """
+    백그라운드에서 지식 카드(Vote 타입)를 생성하고 허니팟 오답을 AI로 만듭니다.
+    """
+    from app.models.archive import ArchivePost, ArchiveAnswer
+    from app.models.academy import KnowledgeCard
+    from app.services.chat_service import generate_honeypot_answer
+    import random
+    from bson import ObjectId
+
+    try:
+        post = await ArchivePost.get(ObjectId(post_id))
+        answer = await ArchiveAnswer.get(ObjectId(answer_id))
+        if not post or not answer:
+            return
+
+        # ── [NEW] 문제 타입 비율 조절: 게시글당 Vote 카드는 최대 3개까지만 ──
+        vote_count = await KnowledgeCard.find(
+            KnowledgeCard.linked_post_id == post_id,
+            KnowledgeCard.type == "vote"
+        ).count()
+        
+        if vote_count >= 3:
+            return
+
+        choices = []
+        # 현재 이 답변을 제외한 기존 답변들을 가져옵니다.
+        existing_answers = await ArchiveAnswer.find(
+            ArchiveAnswer.post_id == post_id,
+            ArchiveAnswer.id != answer.id
+        ).to_list()
+        
+        if not existing_answers:
+            # 첫 번째 유저 답변인 경우: LLM이 작성한 요약(summary)과 비교
+            if post.summary:
+                choices = [post.summary, answer.content]
+        else:
+            # 두 번째 이상의 답변인 경우: 기존 답변 중 하나를 랜덤으로 골라 비교
+            other_ans = random.choice(existing_answers)
+            choices = [other_ans.content, answer.content]
+            
+        if len(choices) == 2:
+            # 보기가 2개 준비되었다면 Vote 카드 생성
+            # 순서를 섞어줌 (유저 답변이 항상 뒤에 나오지 않도록)
+            random.shuffle(choices)
+            
+            # ── [NEW] 약 40% 확률로 허니팟(Honeypot) 추가 ──
+            honeypot_answer = ""
+            if random.random() < 0.4:
+                try:
+                    honeypot_answer = await generate_honeypot_answer(post.content)
+                    if honeypot_answer and honeypot_answer not in choices:
+                        choices.append(honeypot_answer)
+                        random.shuffle(choices)
+                except Exception as e:
+                    print(f"Honeypot generation skipped: {e}")
+
+            vote_card = KnowledgeCard(
+                type="vote",
+                question=f"{post.title}",
+                content=post.content,
+                summary=post.summary,
+                choices=choices,
+                correct_answer="",  # 다수결 방식이므로 정답 없음
+                honeypot_answer=honeypot_answer,
+                priority=50 if post.is_sos else 0,
+                linked_post_id=post_id,
+                source_message_id=str(answer.id)
+            )
+            await vote_card.insert()
+            print(f"[Archive] Background KnowledgeCard (vote) created for post: {post_id}")
+
+    except Exception as e:
+        print(f"Error in background vote card generation: {e}")

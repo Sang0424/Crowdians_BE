@@ -455,7 +455,7 @@ async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: s
     # LangChain 용 Gemini 모델 초기화 (안정적인 JSON 추출)
     llm = ChatGoogleGenerativeAI(
         model="gemini-3.1-flash-lite-preview", 
-        temperature=0.1,
+        temperature=0.3,
         google_api_key=settings.GEMINI_API_KEY
     )
     parser = JsonOutputParser(pydantic_object=ArchiveMetadata)
@@ -476,9 +476,9 @@ async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: s
         2. 'title': 반드시 물음표(?)로 끝나는 간결한 질문 형식. 유효하지 않은 질문인 경우 '유효하지 않은 질문'.
         3. 'summary': 반드시 3개의 문장이 줄바꿈(\\n)으로 구분. (어떤 상황인지 / 무엇이 아쉬웠는지 / 어떤 조언이 필요한지)
         4. 'detailed_content': 
-           - 스타일: 블로그나 커뮤니티(에펨코리아, 클리앙 등)에 자신(AI 파트너)의 상황을 설명하고 도움을 요청하는 듯한 친숙한 문체.
+           - 스타일: 블로그나 커뮤니티에 자신(AI 파트너)의 상황을 설명하고 도움을 요청하는 듯한 친숙한 문체. 그렇지만 Crowdians 사용자들에게 묻는것을 분명히 해야 함.
            - 내용: 이전 대화 맥락을 활용하여 어떤 과정을 거쳐 이 질문에 도달했는지 상세히 서술. **"내(AI 파트너)가 이렇게 답해줬는데, 여러분(사람들) 생각은 어때? 더 공감되는 답변이 있을까?"** 라는 뉘앙스가 느껴져야 함.
-           - 비식별화: 유저 이름, 전화번호, 이메일, 회사명 등 모든 개인정보는 반드시 '사용자 A', 'B 업체' 등으로 익명 처리.
+           - 비식별화: 유저 이름, 전화번호, 이메일, 회사명 등 모든 개인정보는 반드시 '내 파트너', '내 파트너가 다니는 회사' 등으로 익명 처리.
            - 필수 포함: 질문의 발단이 된 유저의 마지막 질문과 AI가 내놓은 아쉬운 답변 내용을 본문 내에 자연스럽게 인용.
            - 가독성: 적절한 줄바꿈과 문단 나누기를 통해 가독성 확보.
         5. 'context_start_index': 상황 파악에 필요한 최초 대화의 인덱스.

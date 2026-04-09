@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 from beanie import PydanticObjectId
 from app.models.quest import Quest, UserQuestBookmark
 from app.models.user import User
-from app.core.exceptions import InsufficientResourceError, NotFoundError
+from fastapi import status
+from app.core.exceptions import InsufficientResourceError, NotFoundError, DomainError
 from app.services.mailbox_service import send_system_mail
 
 
@@ -18,14 +19,32 @@ async def create_quest(
     target_user_id: str | None = None
 ) -> str:
     """새로운 의뢰 생성 및 골드 차감"""
-    if reward > 0 and user.stats.gold < reward:
-        raise InsufficientResourceError("골드")
+    # ── [NEW] 직접 의뢰 정책 상향 (1회 -> 3회) 및 비용(100 Gold) 추가 ──
+    if target_user_id:
+        if user.subscription_plan != "premium":
+            # 1. 횟수 제한 체크 (3회)
+            if user.stats.daily_commission_count >= 3:
+                raise DomainError(
+                    message="직접 의뢰 한도를 초과했습니다. (일일 3회)",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    code="LIMIT_EXCEEDED_COMMISSION"
+                )
+            # 2. 비용 체크 (100 Gold)
+            if user.stats.gold < 100:
+                raise InsufficientResourceError("골드 (100G 필요)")
+            
+            # 3. 비용 차감 및 횟수 증가
+            user.stats.gold -= 100
+            user.stats.daily_commission_count += 1
+    else:
+        # 일반 퀘스트인 경우 기존 reward 연동 차감
+        if reward > 0:
+            if user.stats.gold < reward:
+                raise InsufficientResourceError("골드")
+            user.stats.gold -= reward
 
-    # 골드 차감
-    if reward > 0:
-        user.stats.gold -= reward
-        # 유저 정보 업데이트 (user_repository를 쓰거나 직접 save)
-        await user.save()
+    # 유저 정보 업데이트
+    await user.save()
 
     # 의뢰 생성
     quest = Quest(

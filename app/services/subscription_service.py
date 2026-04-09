@@ -170,7 +170,14 @@ class SubscriptionService:
                 user.subscription_plan = "premium"
                 # 만료일은 renews_at 또는 ends_at 중 있는 것으로 설정
                 user.subscription_expires_at = renews_at or ends_at
+            elif status == "cancelled":
+                # 취소 예약 상태: Lemon Squeezy는 취소 시 subscription_updated(status="cancelled")를 먼저 보냄
+                # 실제 만료(ends_at)까지는 프리미엄 유지. subscription_expired 이벤트 때 실제 다운그레이드 처리
+                user.subscription_plan = "premium"
+                user.subscription_expires_at = ends_at
+                print(f"User {uid} subscription cancelled. Premium maintained until {ends_at}.")
             else:
+                # expired, past_due 등 명백히 종료된 상태만 즉시 free 처리
                 user.subscription_plan = "free"
                 
         elif event_name in ["subscription_cancelled"]:
@@ -181,6 +188,17 @@ class SubscriptionService:
         elif event_name in ["subscription_expired", "subscription_payment_failed"]:
             user.subscription_plan = "free"
             user.subscription_expires_at = None
+            # 구독 만료 즉시 스태미나 / 학습 티켓을 free 플랜 최댓값으로 클램핑
+            # (subscription_plan이 "free"로 변경된 후 property가 free 기준으로 동작)
+            free_max_stamina = user.max_stamina          # 20 + 성장분
+            free_max_tickets = user.max_learning_tickets  # 3 + 신뢰도 보너스
+            user.stats.stamina = min(user.stats.stamina, free_max_stamina)
+            user.stats.learning_tickets = min(user.stats.learning_tickets, free_max_tickets)
+            print(
+                f"User {uid} subscription expired. "
+                f"Stamina capped: {user.stats.stamina}/{free_max_stamina}, "
+                f"Tickets capped: {user.stats.learning_tickets}/{free_max_tickets}"
+            )
 
         # 3. 프리미엄 업그레이드 시 티켓 및 스태미나 처리
         if user.subscription_plan == "premium":

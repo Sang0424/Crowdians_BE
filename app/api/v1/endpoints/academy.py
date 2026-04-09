@@ -1,6 +1,6 @@
 # app/api/v1/endpoints/academy.py
 
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status, BackgroundTasks
 
 from app.core.security import CurrentUser
 from app.models.user import User
@@ -73,6 +73,7 @@ async def submit_card(
     card_id: str,
     request: CardSubmitRequest,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     try:
         from app.models.academy import KnowledgeCard
@@ -103,7 +104,12 @@ async def submit_card(
             if final_answer is None:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="답변 데이터가 누락되었습니다.")
                 
-            result = await submit_card_answer(current_user, card_id, final_answer)
+            result = await submit_card_answer(
+                current_user, 
+                card_id, 
+                final_answer,
+                background_tasks=background_tasks
+            )
 
         return CardSubmitResponse(**result)
     except ValueError as e:

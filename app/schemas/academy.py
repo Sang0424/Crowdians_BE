@@ -27,6 +27,7 @@ class CardSubmitResponse(BaseModel):
     rewardExp: int
     rewardGold: int
     rewardTrust: int
+    rewardIntelligence: int
     message: str
 
 

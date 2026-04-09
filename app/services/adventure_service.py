@@ -286,7 +286,7 @@ async def continue_adventure(user: User, session_id: str) -> dict:
         # 클리어 추가 보상 (확정 보상)
         reward_tickets = 1
         courage_gained = 1
-        reward_gold = 20
+        reward_gold = 100
 
         user.stats.gold += reward_gold
         user.stats.learning_tickets += reward_tickets
@@ -297,7 +297,7 @@ async def continue_adventure(user: User, session_id: str) -> dict:
             "success": True,
             "nextNode": None,
             "status": "complete",
-            "message": "축하합니다! 모험을 무사히 완료했습니다. (Ticket +1, Gold +20)",
+            "message": "축하합니다! 모험을 무사히 완료했습니다. (Ticket +1, Gold +100)",
             "rewardTickets": reward_tickets,
             "courageGained": courage_gained,
         }

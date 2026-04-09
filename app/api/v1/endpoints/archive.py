@@ -153,9 +153,6 @@ async def create_post(
             locale=request.locale,
         )
         
-        # LLM 태그 추출 및 요약 백그라운드 태스크 등록
-        background_tasks.add_task(update_post_tags_and_summary, post_id)
-        
         return ArchivePostSubmitResponse(
             success=True,
             postId=post_id,
@@ -186,9 +183,15 @@ async def create_answer(
     post_id: str,
     request: ArchiveAnswerRequest,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     try:
-        ans_id = await submit_archive_answer(current_user, post_id, request.content)
+        ans_id = await submit_archive_answer(
+            current_user, 
+            post_id, 
+            request.content,
+            background_tasks=background_tasks
+        )
         return ArchiveAnswerSubmitResponse(
             success=True,
             answerId=ans_id,
