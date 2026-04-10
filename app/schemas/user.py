@@ -24,6 +24,7 @@ class UserStatsResponse(BaseModel):
     dailySosCount: int
     dailyCommissionCount: int
     isOnboardingDone: bool
+    hasCompletedFirstCommission: bool
     learningTickets: int
     maxLearningTickets: int
     title: Optional[str] = ""

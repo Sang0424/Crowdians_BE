@@ -15,8 +15,12 @@ async def get_top_rankings_by_type(ranking_type: str, limit: int = 50) -> list[U
         sort_field = ["-stats.exp", "-stats.trust"]
     elif ranking_type == "trust":
         sort_field = ["-stats.trust", "-stats.exp"]
+    elif ranking_type == "gold":
+        sort_field = ["-stats.gold", "-stats.exp"]
+    elif ranking_type == "courage":
+        sort_field = ["-stats.courage", "-stats.exp"]
     else:
-        raise ValueError("지원하지 않는 랭킹 타입입니다.")
+        raise ValueError(f"지원하지 않는 랭킹 타입입니다: {ranking_type}")
         
     # User 컬렉션에서 해당 스탯을 기준으로 내림차순 정렬 후 Limit 만큼 반환
     # (만약 sort_field가 list면 MongoDB PyMongo 정렬 문법으로 적용)

@@ -50,6 +50,7 @@ def _user_to_profile(user: User) -> UserProfileResponse:
             dailySosCount=user.stats.daily_sos_count,
             dailyCommissionCount=user.stats.daily_commission_count,
             isOnboardingDone=user.stats.is_onboarding_done,
+            hasCompletedFirstCommission=user.stats.has_completed_first_commission,
             learningTickets=user.stats.learning_tickets,
             maxLearningTickets=user.max_learning_tickets,
             title=user.title,
@@ -202,8 +203,10 @@ async def sync_guest_stats(
         dailySosCount=stats.daily_sos_count,
         dailyCommissionCount=stats.daily_commission_count,
         isOnboardingDone=stats.is_onboarding_done,
+        hasCompletedFirstCommission=stats.has_completed_first_commission,
         learningTickets = stats.learning_tickets,
         maxLearningTickets=updated_user.max_learning_tickets,
+        title=updated_user.title or "",
     )
 
 
@@ -260,8 +263,10 @@ async def pet_character(
         dailySosCount=stats.daily_sos_count,
         dailyCommissionCount=stats.daily_commission_count,
         isOnboardingDone=stats.is_onboarding_done,
+        hasCompletedFirstCommission=stats.has_completed_first_commission,
         learningTickets=stats.learning_tickets,
         maxLearningTickets=current_user.max_learning_tickets,
+        title=current_user.title or "",
     )
 
 

@@ -42,7 +42,9 @@ async def list_rankings(
                 dailySosCount=u.stats.daily_sos_count,
                 dailyCommissionCount=u.stats.daily_commission_count,
                 isOnboardingDone=u.stats.is_onboarding_done,
+                hasCompletedFirstCommission=u.stats.has_completed_first_commission,
                 maxLearningTickets=u.max_learning_tickets,
+                title=u.title or "",
             )
 
             equipped_parts_resp = None

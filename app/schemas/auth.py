@@ -8,37 +8,11 @@ from pydantic import BaseModel, Field
 
 # ── Embedded sub-schemas (camelCase for frontend compatibility) ──
 
-class UserStatsResponse(BaseModel):
-    level: int
-    exp: int
-    maxExp: int
-    gold: int
-    stamina: int
-    maxStamina: int
-    trust: int
-    intelligence: int
-    courage: int
-    intimacy: int
-    dailyChatExp: int
-    dailyPetCount: int
-    dailySosCount: int
-    dailyCommissionCount: int
-    isOnboardingDone: bool
-    learningTickets: int
-    maxLearningTickets: int
-
-
-class EquippedPartsResponse(BaseModel):
-    head: str
-    hand: str
-    body: str
-    effect: str
-
-
-class CharacterResponse(BaseModel):
-    type: str
-    equippedParts: EquippedPartsResponse
-    unlockedParts: list[str]
+from app.schemas.user import (
+    UserStatsResponse,
+    CharacterResponse,
+    EquippedPartsResponse,
+)
 
 
 class UserResponse(BaseModel):

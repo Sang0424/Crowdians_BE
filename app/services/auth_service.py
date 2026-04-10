@@ -73,6 +73,7 @@ async def get_or_create_user(
         return user, False
 
     # ── 신규 유저: 초기 데이터로 생성 ──
+    from app.services.mailbox_service import send_system_mail
     new_user = User(
         uid=uid,
         email=email,
@@ -83,6 +84,14 @@ async def get_or_create_user(
         role="user",
     )
     await new_user.insert()
+
+    # 웰컴 및 퀘스트 안내 메일 발송
+    await send_system_mail(
+        user_id=new_user.uid,
+        title="✨ 크라우디언즈에 오신 것을 환영합니다!",
+        content="AI의 답변이 마음에 들지 않으신가요? '물러가기' 버튼을 눌러 아카데미에 도움을 요청해 보세요! 첫 성공 시 100 Gold와 25 EXP를 드립니다."
+    )
+
     return new_user, True
 
 

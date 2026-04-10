@@ -25,6 +25,7 @@ class UserStats(BaseModel):
     last_pet_date: Optional[datetime] = None # 마지막으로 쓰다듬은 날짜
     last_daily_reset: str = ""    # 마지막 일일 초기화 날짜 (YYYY-MM-DD 포맷)
     is_onboarding_done: bool = False # 온보딩 완료 여부
+    has_completed_first_commission: bool = False # 처음으로 커뮤니티 정정 요청(RLHF)을 완료했는지 여부
     title: str = ""               # 칭호 (텍스트 기반 보상)
 
     @property

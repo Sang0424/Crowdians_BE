@@ -81,4 +81,18 @@ async def send_system_mail(user_id: str, title: str, content: str, exp: int=0, g
         },
         reference_id=reference_id
     )
-    await new_mail.insert()
+async def delete_mail(user: User, mail_id: str) -> bool:
+    """우편을 삭제합니다. 읽은 우편만 삭제 가능하도록 제한합니다."""
+    try:
+        mail = await Mail.get(PydanticObjectId(mail_id))
+    except Exception:
+        raise ValueError("유효하지 않은 메일 ID입니다.")
+        
+    if not mail or mail.user_id != user.uid:
+        raise ValueError("메일을 찾을 수 없거나 권한이 없습니다.")
+        
+    if not mail.is_read:
+        raise ValueError("읽지 않은 우편은 삭제할 수 없습니다. 먼저 보상을 수령하세요.")
+        
+    await mail.delete()
+    return True

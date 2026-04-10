@@ -26,7 +26,13 @@ DOCUMENT_MODELS = [
 
 async def init_db():
     """MongoDB 연결 및 Beanie 초기화"""
-    client = AsyncIOMotorClient(settings.MONGODB_URL)
+    # Cloud Run 환경에서의 안정적인 연결을 위해 옵션 강화
+    client = AsyncIOMotorClient(
+        settings.MONGODB_URL,
+        serverSelectionTimeoutMS=30000,
+        connectTimeoutMS=30000,
+        tls=True
+    )
     await init_beanie(
         database=client[settings.DB_NAME],
         document_models=DOCUMENT_MODELS,

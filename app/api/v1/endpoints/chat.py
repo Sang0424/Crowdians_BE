@@ -24,7 +24,7 @@ from app.services.chat_service import (
     clear_chat_history,
     delete_chat_message,
     get_or_create_conversation,
-    extract_metadata_with_langchain,
+    send_guest_chat_message,
 )
 from app.services.archive_service import (
     process_archive_task_background,
@@ -240,9 +240,43 @@ async def unlike_message(
         locale=request.locale
     )
     
+    # 3. 보상 처리 (첫 정정 요청 유도 퀘스트)
+    if not current_user.stats.has_completed_first_commission:
+        from app.services.mailbox_service import send_system_mail
+        
+        # 첫 정정 완료 플래그 설정
+        current_user.stats.has_completed_first_commission = True
+        await current_user.save()
+        
+        # 보상 우편 발송 (100G, 25EXP)
+        mail_title = "🎁 [퀘스트 완료] 첫 도움 요청 보상"
+        mail_content = "아카데미의 지식 발전에 기여해 주셔서 감사합니다! 약속드린 초심자 퀘스트 보상을 수령하세요."
+        
+        if request.locale == "ja":
+            mail_title = "🎁 [クエスト完了] 初回依頼報酬"
+            mail_content = "アカデミーの知識向上へのご協力ありがとうございます！お約束のビギナークエスト報酬をお受け取りください。"
+        elif request.locale == "en":
+            mail_title = "🎁 [Quest Complete] First Help Reward"
+            mail_content = "Thank you for contributing to the Academy! Please claim your promised beginner quest reward."
+            
+        await send_system_mail(
+            user_id=current_user.uid,
+            title=mail_title,
+            content=mail_content,
+            gold=100,
+            exp=25
+        )
+
+    # 성공 메시지 (우편함 안내 추가)
+    success_msg = "답변을 아카데미에 등록했습니다. 우편함을 확인해 주세요!"
+    if request.locale == "ja":
+        success_msg = "回答をアカデミーに登録しました。郵便箱を確認してください！"
+    elif request.locale == "en":
+        success_msg = "The response has been registered in the Academy. Please check your mailbox!"
+
     return ChatUnlikeResponse(
         success=True,
-        message=get_text("chat.unlike.success", request.locale),
+        message=success_msg,
     )
 
 

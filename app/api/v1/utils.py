@@ -32,8 +32,10 @@ def user_to_response(user: User) -> UserResponse:
             dailySosCount=user.stats.daily_sos_count,
             dailyCommissionCount=user.stats.daily_commission_count,
             isOnboardingDone=user.stats.is_onboarding_done,
+            hasCompletedFirstCommission=user.stats.has_completed_first_commission,
             learningTickets=user.stats.learning_tickets,
             maxLearningTickets=user.max_learning_tickets,
+            title=user.title or "",
         ),
         character=CharacterResponse(
             type=user.character.type,

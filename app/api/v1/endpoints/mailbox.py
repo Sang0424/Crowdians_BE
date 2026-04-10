@@ -10,7 +10,7 @@ from app.schemas.mailbox import (
     MailboxListResponse,
     MailReadResponse,
 )
-from app.services.mailbox_service import get_user_mails, read_mail
+from app.services.mailbox_service import get_user_mails, read_mail, delete_mail
 
 router = APIRouter()
 
@@ -73,6 +73,25 @@ async def read_mailbox_mail(
             message=result["message"],
             receivedRewards=MailRewardResponse(**result["receivedRewards"])
         )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.delete(
+    "/mailbox/{mail_id}",
+    summary="우편 삭제",
+    description="읽은 우편을 삭제합니다.",
+)
+async def delete_mailbox_mail(
+    mail_id: str,
+    current_user: CurrentUser,
+):
+    try:
+        await delete_mail(current_user, mail_id)
+        return {"success": True, "message": "우편이 삭제되었습니다."}
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

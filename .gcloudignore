@@ -1,3 +1,13 @@
+.gcloudignore
+.git
+.gitignore
+node_modules
+__pycache__
+*.pyc
+.pytest_cache
+tests/
+scratch/
+seed_v2_resume.log
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -113,18 +123,8 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
 .env.local
-.env.prod
 .env.dev
-
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -160,9 +160,13 @@ cython_debug/
 
 # Custom
 firebase-admin-sdk.json
-firebase-admin-sdk-prod.json
 # scripts
 scripts/*
 
 # data
 migration.log
+
+# 인프라 파일은 업로드에 포함되어야 빌드가 가능합니다.
+# .gitignore에 있어도 여기서 명시적으로 제외하지 않으면 업로드됩니다.
+! .env.prod
+! firebase-admin-sdk-prod.json

@@ -1,5 +1,4 @@
-# app/main.py
-
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -61,6 +60,16 @@ async def domain_error_handler(request: Request, exc: DomainError):
             "detail": localized_message,
             "code": exc.code
         },
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    logging.error(f"Unhandled error: {exc}")
+    logging.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "error": str(exc)}
     )
 
 app.include_router(api_v1_router)
