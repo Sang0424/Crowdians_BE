@@ -6,6 +6,9 @@ from bson import ObjectId
 from app.models.user import User
 from app.models.academy import KnowledgeCard, CardResponse
 from app.services.user_service import check_daily_reset
+import random
+
+POOL_SIZE = 50
 
 
 
@@ -60,16 +63,27 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
             )
         )
     
-    import random
     
     # ── 1단계: Vote 타입 우선 확보 (최대한 3장) ──
-    vote_cards = await KnowledgeCard.find(*query_filters, KnowledgeCard.type == "vote").sort([("priority", -1), ("created_at", -1)]).limit(3).to_list()
-    print(f"[Academy] Obtained Vote Cards: {len(vote_cards)}")
+    # POOL_SIZE만큼 후보군을 가져와 그 안에서 무작위로 선택합니다.
+    vote_candidates = await KnowledgeCard.find(
+        *query_filters, KnowledgeCard.type == "vote"
+    ).sort([("priority", -1), ("created_at", -1)]).limit(POOL_SIZE).to_list()
+    
+    vote_cards = random.sample(vote_candidates, min(3, len(vote_candidates)))
+    print(f"[Academy] Obtained Vote Cards: {len(vote_cards)} (from {len(vote_candidates)} candidates)")
     
     # ── 2단계: 부족한 만큼 Teach 타입으로 채우기 (최대 5장 확보를 목표) ──
     needed_teach = 5 - len(vote_cards)
-    teach_cards = await KnowledgeCard.find(*query_filters, KnowledgeCard.type == "teach").sort([("priority", -1), ("created_at", -1)]).limit(needed_teach).to_list()
-    print(f"[Academy] Obtained Teach Cards: {len(teach_cards)}")
+    if needed_teach > 0:
+        teach_candidates = await KnowledgeCard.find(
+            *query_filters, KnowledgeCard.type == "teach"
+        ).sort([("priority", -1), ("created_at", -1)]).limit(POOL_SIZE).to_list()
+        
+        teach_cards = random.sample(teach_candidates, min(needed_teach, len(teach_candidates)))
+        print(f"[Academy] Obtained Teach Cards: {len(teach_cards)} (from {len(teach_candidates)} candidates)")
+    else:
+        teach_cards = []
     
     total_cards = vote_cards + teach_cards
     
@@ -77,10 +91,13 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
     if len(total_cards) < 5:
         existing_ids = [c.id for c in total_cards]
         needed_extra = 5 - len(total_cards)
-        extra_cards = await KnowledgeCard.find(
+        
+        extra_candidates = await KnowledgeCard.find(
             *query_filters,
             NotIn(KnowledgeCard.id, existing_ids)
-        ).sort([("priority", -1), ("created_at", -1)]).limit(needed_extra).to_list()
+        ).sort([("priority", -1), ("created_at", -1)]).limit(POOL_SIZE).to_list()
+        
+        extra_cards = random.sample(extra_candidates, min(needed_extra, len(extra_candidates)))
         total_cards += extra_cards
         print(f"[Academy] Obtained Extra Cards: {len(extra_cards)}")
     
@@ -109,7 +126,6 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
 
     return card_list
 
-    return card_list
 
 
 async def start_academy_session(user: User) -> dict:
