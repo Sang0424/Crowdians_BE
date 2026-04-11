@@ -35,3 +35,18 @@ class CardRejectResponse(BaseModel):
     success: bool
     message: str
 
+
+class GuestAcademySyncItem(BaseModel):
+    card_id: str
+    answer: str | int | None = None
+    chosen_answer: str | int | None = None
+    unchosen_answer: str | int | None = None
+    is_correct: bool = True
+    reward_exp: int = 0
+    reward_gold: int = 0
+    reward_trust: int = 0
+    reward_intelligence: int = 0
+
+class GuestAcademySyncRequest(BaseModel):
+    items: list[GuestAcademySyncItem]
+

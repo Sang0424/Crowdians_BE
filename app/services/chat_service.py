@@ -241,9 +241,10 @@ async def send_chat_message(
     user_msg = ChatMessage(role="user", content=message_content, createdAt=now)
     ai_msg = ChatMessage(role="model", content=ai_response_text, createdAt=now)
     
-    conv.messages.extend([user_msg, ai_msg])
+    # 리스트 객체를 새로 할당하여 Beanie가 변경 사항을 확실히 감지하게 함
+    conv.messages = list(conv.messages) + [user_msg, ai_msg]
     conv.updatedAt = now
-    await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updatedAt": conv.updatedAt})
+    await conv.save()
     
     # 4. 유저 스탯 갱신
     if not is_premium:
@@ -300,9 +301,12 @@ async def delete_chat_message(uid: str, index: int) -> None:
     if index < 0 or index >= len(conv.messages):
         raise ValueError("유효하지 않은 메시지 인덱스입니다.")
     
-    conv.messages.pop(index)
+    # 리스트에서 항목 삭제 후 새 리스트 할당하여 변경 감지 보장
+    messages = list(conv.messages)
+    messages.pop(index)
+    conv.messages = messages
     conv.updatedAt = datetime.now(timezone.utc)
-    await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updatedAt": conv.updatedAt})
+    await conv.save()
 
 import json
 
@@ -545,7 +549,7 @@ async def generate_honeypot_answer(raw_prompt: str) -> str:
         아래 유저의 질문에 대해, 얼핏 보면 정답 같지만 전문가가 보면 명백하게 틀린 오답(Hallucination)을 딱 1문장으로 작성하세요.
         
         [유저 질문]: {raw_prompt}
-        [함정 오답]:""",
+        틀린 답변:""",
         input_variables=["raw_prompt"]
     )
     
@@ -553,7 +557,12 @@ async def generate_honeypot_answer(raw_prompt: str) -> str:
     
     try:
         honeypot = await chain.ainvoke({"raw_prompt": raw_prompt})
-        return honeypot.strip()
+        # Clean potential AI prefixes
+        cleaned = honeypot.strip()
+        for p in ["[함정 오답]:", "[함정 오답]", "[함정 답변]:", "[함정 답변]", "틀린 답변:"]:
+            if cleaned.startswith(p):
+                cleaned = cleaned[len(p):].strip()
+        return cleaned
     except Exception as e:
         print(f"Honeypot Generation Failed: {e}")
         return "이 질문에 대한 정확한 정보가 아직 부족합니다."
@@ -642,9 +651,10 @@ async def stream_chat_message(
         user_msg = ChatMessage(role="user", content=message_content, createdAt=now)
         ai_msg = ChatMessage(role="model", content=ai_response_text, createdAt=now)
         
-        conv.messages.extend([user_msg, ai_msg])
+        # 리스트 객체를 새로 할당하여 Beanie가 변경 사항을 확실히 감지하게 함
+        conv.messages = list(conv.messages) + [user_msg, ai_msg]
         conv.updatedAt = now
-        await chat_repo.update(db_obj=conv, obj_in={"messages": conv.messages, "updatedAt": conv.updatedAt})
+        await conv.save()
         
         # 스탯 갱신
         is_premium = user.subscription_plan == "premium"

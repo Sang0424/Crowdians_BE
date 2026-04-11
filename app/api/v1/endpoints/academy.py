@@ -2,19 +2,21 @@
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status, BackgroundTasks
 
-from app.core.security import CurrentUser
+from app.core.security import CurrentUser, CurrentUserOptional
 from app.models.user import User
 from app.schemas.academy import (
     KnowledgeCardResponse,
     CardSubmitRequest,
     CardSubmitResponse,
     CardRejectResponse,
-    StartSessionResponse
+    StartSessionResponse,
+    GuestAcademySyncRequest
 )
 from app.services.academy_service import (
     get_daily_cards,
     submit_card_answer,
     reject_card_answer,
+    sync_guest_academy_data,
 )
 
 router = APIRouter()
@@ -27,9 +29,9 @@ router = APIRouter()
     "/academy/start",
     response_model=StartSessionResponse,
     summary="아카데미 세션 시작 (티켓 차감)",
-    description="아카데미 시작 버튼을 눌렀을 때 티켓 1장을 차감합니다.",
+    description="아카데미 시작 버튼을 눌렀을 때 티켓 1장을 차감합니다. 게스트의 경우 티켓을 소모하지 않습니다.",
 )
-async def start_academy(current_user: CurrentUser):
+async def start_academy(current_user: CurrentUserOptional):
     from app.services.academy_service import start_academy_session
     try:
         result = await start_academy_session(current_user)
@@ -50,7 +52,7 @@ async def start_academy(current_user: CurrentUser):
     description="하루 최대 5장의 지식 카드(Vote/Teach 믹스)를 조회합니다.",
 )
 async def get_cards(
-    current_user: CurrentUser,
+    current_user: CurrentUserOptional,
     ticketIndex: int = Query(default=1, description="몇 번째 티켓(카드)을 요청하는지 인덱스"),
     locale: str = Query("ko", description="언어 설정"),
 ):
@@ -72,7 +74,7 @@ async def get_cards(
 async def submit_card(
     card_id: str,
     request: CardSubmitRequest,
-    current_user: CurrentUser,
+    current_user: CurrentUserOptional,
     background_tasks: BackgroundTasks,
 ):
     try:
@@ -131,7 +133,7 @@ async def submit_card(
 )
 async def reject_card(
     card_id: str,
-    current_user: CurrentUser,
+    current_user: CurrentUserOptional,
 ):
     try:
         result = await reject_card_answer(current_user, card_id)
@@ -140,4 +142,27 @@ async def reject_card(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+
+
+# ══════════════════════════════════════
+# POST /academy/sync-guest-data — 게스트 데이터 동기화
+# ══════════════════════════════════════
+
+@router.post(
+    "/academy/sync-guest-data",
+    summary="게스트 학습 정산",
+    description="가입 시 게스트 세션에서 쌓인 학습 데이터를 계정으로 동기화합니다.",
+)
+async def sync_academy_data(
+    request: GuestAcademySyncRequest,
+    current_user: CurrentUser,
+):
+    try:
+        result = await sync_guest_academy_data(current_user, request.items)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"동기화 중 오류 발생: {str(e)}",
         )

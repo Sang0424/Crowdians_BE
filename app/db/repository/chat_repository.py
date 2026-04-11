@@ -11,7 +11,7 @@ class ChatRepository(BaseRepository[ChatConversation, BaseModel, BaseModel]):
         """유저의 최신 대화 세션 조회"""
         return await self.model.find_one(
             self.model.uid == uid,
-            sort=[("created_at", -1)]
+            sort=[("createdAt", -1)]
         )
 
 chat_repo = ChatRepository()

@@ -12,29 +12,32 @@ POOL_SIZE = 50
 
 
 
-async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> list[dict]:
+async def get_daily_cards(user: User | None, ticket_index: int, locale: str = "ko") -> list[dict]:
     """일일 지식카드 5장을 조회합니다. (ArchivePost 연동 카드 및 일반 퀴즈)"""
     # 0. 로케일 정규화 (en-US -> en 등)
     if locale and len(locale) > 2:
         locale = locale[:2].lower()
     
-    print(f"[Academy] Fetching cards for User: {user.uid}, Locale: {locale}, Ticket: {ticket_index}")
-
+    print(f"[Academy] Fetching cards for User: {user.uid if user else 'guest'}, Locale: {locale}, Ticket: {ticket_index}")
     # 1. 일일 초기화 체크
-    if check_daily_reset(user):
+    if user and check_daily_reset(user):
         await user.save()
 
     # 2. 이미 답변한 질문(아카이브 답변 기준) 및 본인이 작성한 질문 제외
     from app.models.archive import ArchiveAnswer, ArchivePost
     from beanie.operators import NotIn, Or, In
 
-    # 자신이 이미 답변한 포스트 ID 목록
-    answered_posts = await ArchiveAnswer.find(ArchiveAnswer.author_id == user.uid).to_list()
-    answered_post_ids = [ans.post_id for ans in answered_posts]
+    if user:
+        # 자신이 이미 답변한 포스트 ID 목록
+        answered_posts = await ArchiveAnswer.find(ArchiveAnswer.author_id == user.uid).to_list()
+        answered_post_ids = [ans.post_id for ans in answered_posts]
 
-    # 자신이 작성한 포스트 ID 목록
-    my_posts = await ArchivePost.find(ArchivePost.author_id == user.uid).to_list()
-    my_post_ids = [str(p.id) for p in my_posts]
+        # 자신이 작성한 포스트 ID 목록
+        my_posts = await ArchivePost.find(ArchivePost.author_id == user.uid).to_list()
+        my_post_ids = [str(p.id) for p in my_posts]
+    else:
+        answered_post_ids = []
+        my_post_ids = []
 
     # 🌟 [추가] 유효하지 않은 질문(is_valid_question == False) 제외
     invalid_posts = await ArchivePost.find(ArchivePost.is_valid_question == False).to_list()
@@ -44,8 +47,11 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
     print(f"[Academy] Excluded Linked IDs: {len(excluded_linked_ids)} (Reason: Answered, Own, or Invalid)")
 
     # 3. 직접 응답한 카드(CardResponse) ID 목록 조회
-    responded_records = await CardResponse.find(CardResponse.user_id == user.uid).to_list()
-    responded_card_ids = [ObjectId(rec.card_id) for rec in responded_records]
+    if user:
+        responded_records = await CardResponse.find(CardResponse.user_id == user.uid).to_list()
+        responded_card_ids = [ObjectId(rec.card_id) for rec in responded_records]
+    else:
+        responded_card_ids = []
     
     # 4. 공용 제외 쿼리 생성 (언어 필터 추가)
     query_filters = [
@@ -128,8 +134,15 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
 
 
 
-async def start_academy_session(user: User) -> dict:
+async def start_academy_session(user: User | None) -> dict:
     """학습 세션을 시작합니다. 지식 티켓 1장을 소모합니다."""
+    if not user:
+        # 게스트의 경우 티켓 차감 없이 가상의 성공 응답 반환 (최대 5장 세션 가정)
+        return {
+            "success": True,
+            "learningTickets": 0
+        }
+
     if check_daily_reset(user):
         await user.save()
         
@@ -148,10 +161,10 @@ async def start_academy_session(user: User) -> dict:
         "learningTickets": user.stats.learning_tickets
     }
 
-async def submit_card_answer(user: User, card_id: str, answer: str | int, background_tasks: any = None) -> dict:
+async def submit_card_answer(user: User | None, card_id: str, answer: str | int, background_tasks: any = None) -> dict:
     """지식 카드 응답을 제출하고 정답 여부를 판별하여 보상을 지급합니다."""
     # 1. 일일 초기화 및 티켓 검사
-    if check_daily_reset(user):
+    if user and check_daily_reset(user):
         await user.save()
         
     # 2. 카드 조회
@@ -165,7 +178,7 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int, backgr
         raise ValueError("카드를 찾을 수 없습니다.")
         
     # 만약 아카데미 카드가 Archive 연동 카드라면, 아카이브 답변으로도 등록합니다 (동기화)
-    if getattr(card, "linked_post_id", None):
+    if user and getattr(card, "linked_post_id", None):
         from app.services.archive_service import submit_archive_answer
         try:
             await submit_archive_answer(
@@ -181,25 +194,27 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int, backgr
     if card.honeypot_answer and str(answer) == str(card.honeypot_answer):
         # 패널티: 신뢰도 대폭 차감
         penalty_trust = 50
-        user.stats.trust = max(0, user.stats.trust - penalty_trust)
-        await user.save()
-        
-        # 패널티 로그 기록
-        response_log = CardResponse(
-            user_id=user.uid,
-            card_id=card_id,
-            answer=answer,
-            is_correct=False,
-            is_rejected=False,
-            reward_trust=-penalty_trust # 음수 기록
-        )
-        await response_log.insert()
+        if user:
+            user.stats.trust = max(0, user.stats.trust - penalty_trust)
+            await user.save()
+            
+            # 패널티 로그 기록
+            response_log = CardResponse(
+                user_id=user.uid,
+                card_id=card_id,
+                answer=answer,
+                is_correct=False,
+                is_rejected=False,
+                reward_trust=-penalty_trust # 음수 기록
+            )
+            await response_log.insert()
         
         return {
             "isCorrect": False,
             "rewardExp": 0,
             "rewardGold": 0,
             "rewardTrust": -penalty_trust,
+            "rewardIntelligence": 0,
             "message": "부정확한 답변을 선택하셨습니다. 신뢰도가 하락합니다."
         }
 
@@ -211,11 +226,12 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int, backgr
         is_correct = (str(card.correct_answer) == str(answer))
 
     # 🌟 5. [추가] 신뢰도 기반 가중치(Weight) 계산
-    voting_weight = max(1, user.stats.trust // 500)
+    voting_weight = max(1, (user.stats.trust // 500) if user else 2) # 게스트는 기본 1000점(가중치 2) 가정
 
     exp_gained = 0
     gold_gained = 0
     trust_gained = 0
+    int_gained = 0
     
     # 6. 보상 계산
     # RLHF(vote, teach) 목적의 데이터 수집인 경우 무조건 보상, 
@@ -226,31 +242,35 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int, backgr
         trust_gained = 1     # 신뢰도 상승
         int_gained = 3 if card.type == "teach" else 1 # 지능 상승
         
-        user.stats.exp += exp_gained
-        user.stats.gold += gold_gained
-        user.stats.trust += trust_gained
-        user.stats.intelligence += int_gained
-        
-        # 레벨업 판정
-        user.stats.process_level_up(max_stamina=user.max_stamina)
+        if user:
+            user.stats.exp += exp_gained
+            user.stats.gold += gold_gained
+            user.stats.trust += trust_gained
+            user.stats.intelligence += int_gained
             
-        # 🌟 7. [수정] 카드의 trust_count 증가 (단순 +1이 아닌 가중치 반영)
-        card.trust_count += voting_weight
+            # 레벨업 판정
+            user.stats.process_level_up(max_stamina=user.max_stamina)
+                
+            # 🌟 7. [수정] 카드의 trust_count 증가 (단순 +1이 아닌 가중치 반영)
+            card.trust_count += voting_weight
+            
+            await user.save()
+            
+        # 게스트든 유저든 카드의 통계 데이터는 저장해야 함
         await card.save()
-        
-    await user.save()
     
-    # 8. 카드 응답 내역 저장
-    response_log = CardResponse(
-        user_id=user.uid,
-        card_id=card_id,
-        answer=answer,
-        is_correct=is_correct,
-        reward_exp=exp_gained,
-        reward_gold=gold_gained,
-        reward_trust=trust_gained,
-    )
-    await response_log.insert()
+    # 8. 카드 응답 내역 저장 (유저일 때만)
+    if user:
+        response_log = CardResponse(
+            user_id=user.uid,
+            card_id=card_id,
+            answer=answer,
+            is_correct=is_correct,
+            reward_exp=exp_gained,
+            reward_gold=gold_gained,
+            reward_trust=trust_gained,
+        )
+        await response_log.insert()
     
     # 메시지 커스터마이징
     item_type_str = "참여" if card.type in ["vote", "teach"] else "정답"
@@ -267,10 +287,9 @@ async def submit_card_answer(user: User, card_id: str, answer: str | int, backgr
         "message": message
     }
 
-async def reject_card_answer(user: User, card_id: str) -> dict:
+async def reject_card_answer(user: User | None, card_id: str) -> dict:
     """Vote 타입 카드 등에서 둘 다 별로('Reject')를 선택한 경우 처리합니다."""
-    # 티켓은 차감할지 말지에 대한 기획 정책: 일반적으로 차감.
-    if check_daily_reset(user):
+    if user and check_daily_reset(user):
         await user.save()
         
     from bson import ObjectId
@@ -283,16 +302,17 @@ async def reject_card_answer(user: User, card_id: str) -> dict:
         raise ValueError("카드를 찾을 수 없습니다.")
 
     # reject 시 소량의 신뢰도 보상(참여 보상)을 줄지 여부 결정, 일단 없음.
-    await user.save()
-    
-    response_log = CardResponse(
-        user_id=user.uid,
-        card_id=card_id,
-        answer="REJECTED",
-        is_correct=False,
-        is_rejected=True,
-    )
-    await response_log.insert()
+    if user:
+        await user.save()
+        
+        response_log = CardResponse(
+            user_id=user.uid,
+            card_id=card_id,
+            answer="REJECTED",
+            is_correct=False,
+            is_rejected=True,
+        )
+        await response_log.insert()
     
     return {
         "success": True,
@@ -301,10 +321,10 @@ async def reject_card_answer(user: User, card_id: str) -> dict:
 
 
 
-async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_answer: str) -> dict:
+async def submit_ab_vote(user: User | None, card_id: str, chosen_answer: str, unchosen_answer: str) -> dict:
     """A/B 테스트 방식의 투표를 처리하고 선호도 통계를 업데이트합니다."""
     # 1. 일일 초기화
-    if check_daily_reset(user):
+    if user and check_daily_reset(user):
         await user.save()
 
     # 2. 카드 조회
@@ -321,26 +341,30 @@ async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_
     # A/B 테스트에서 chosen_answer가 허니팟이면 패널티
     if card.honeypot_answer and str(chosen_answer) == str(card.honeypot_answer):
         penalty_trust = 50
-        user.stats.trust = max(0, user.stats.trust - penalty_trust)
-        await user.save()
-        
-        response_log = CardResponse(
-            user_id=user.uid,
-            card_id=card_id,
-            answer=chosen_answer,
-            is_correct=False,
-            reward_trust=-penalty_trust
-        )
-        await response_log.insert()
+        if user:
+            user.stats.trust = max(0, user.stats.trust - penalty_trust)
+            await user.save()
+            
+            response_log = CardResponse(
+                user_id=user.uid,
+                card_id=card_id,
+                answer=chosen_answer,
+                is_correct=False,
+                reward_trust=-penalty_trust
+            )
+            await response_log.insert()
         
         return {
-            "success": False,
+            "isCorrect": False,
+            "rewardExp": 0,
+            "rewardGold": 0,
+            "rewardTrust": -penalty_trust,
+            "rewardIntelligence": 0,
             "message": "부정확한 답변을 선택하셨습니다. 신뢰도가 하락합니다.",
-            "rewardTrust": -penalty_trust
         }
 
     # 4. 신뢰도 기반 가중치 계산 (1000점당 1점의 가중치 등 정책에 맞게 조정 가능)
-    voting_weight = max(1, user.stats.trust // 500)
+    voting_weight = max(1, (user.stats.trust // 500) if user else 2)
 
     # 5. 통계 업데이트
     if not card.choice_matches: card.choice_matches = {}
@@ -359,12 +383,16 @@ async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_
     trust_gained = 1
     int_gained = 1
     
-    user.stats.exp += exp_gained
-    user.stats.gold += gold_gained
-    user.stats.trust += trust_gained
-    user.stats.intelligence += int_gained
-    user.stats.process_level_up(max_stamina=user.max_stamina)
-    await user.save()
+    if user:
+        user.stats.exp += exp_gained
+        user.stats.gold += gold_gained
+        user.stats.trust += trust_gained
+        user.stats.intelligence += int_gained
+        user.stats.process_level_up(max_stamina=user.max_stamina)
+        await user.save()
+
+    # 게스트든 유저든 카드 투표 데이터 저장
+    await card.save()
 
     # 🌟 7. 골든 데이터셋 임계점 돌파 검사 (threshold = 100)
     MATCHES_THRESHOLD = 100
@@ -409,19 +437,20 @@ async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_
                 await golden_data.insert()
                 card.is_migrated = True
 
-    await card.save()
+    if user:
+        await card.save()
 
-    # 응답 로그 기록
-    response_log = CardResponse(
-        user_id=user.uid,
-        card_id=card_id,
-        answer=chosen_answer,
-        is_correct=True,
-        reward_exp=exp_gained,
-        reward_gold=gold_gained,
-        reward_trust=trust_gained,
-    )
-    await response_log.insert()
+        # 응답 로그 기록
+        response_log = CardResponse(
+            user_id=user.uid,
+            card_id=card_id,
+            answer=chosen_answer,
+            is_correct=True,
+            reward_exp=exp_gained,
+            reward_gold=gold_gained,
+            reward_trust=trust_gained,
+        )
+        await response_log.insert()
 
     return {
         "success": True,
@@ -431,4 +460,95 @@ async def submit_ab_vote(user: User, card_id: str, chosen_answer: str, unchosen_
         "rewardTrust": trust_gained,
         "rewardIntelligence": int_gained,
         "message": f"투표가 반영되었습니다. (영향력: {voting_weight}점)"
+    }
+
+
+async def sync_guest_academy_data(user: User, items: list) -> dict:
+    """게스트 세션에서 쌓인 학습 데이터를 가입 시점에 일괄 동기화합니다."""
+    total_exp = 0
+    total_gold = 0
+    total_trust = 0
+    total_int = 0
+    
+    synced_count = 0
+    
+    from app.models.academy import CardResponse
+    
+    for item in items:
+        # 이미 답변한 카드인지 중복 체크 방지 (선택 사항)
+        exists = await CardResponse.find_one(
+            CardResponse.user_id == user.uid,
+            CardResponse.card_id == item.card_id
+        )
+        if exists:
+            continue
+            
+        # 1. 정식 응답 로그 생성
+        response_log = CardResponse(
+            user_id=user.uid,
+            card_id=item.card_id,
+            answer=item.answer or item.chosen_answer,
+            is_correct=item.is_correct,
+            reward_exp=item.reward_exp,
+            reward_gold=item.reward_gold,
+            reward_trust=item.reward_trust,
+        )
+        await response_log.insert()
+        
+        # 2. 관련 서비스 연동 (Archive 등)
+        # 퀴즈 보상 합산
+        total_exp += item.reward_exp
+        total_gold += item.reward_gold
+        total_trust += item.reward_trust
+        total_int += item.reward_intelligence
+        
+        # 3. ArchivePost 연동 처리 (있는 경우)
+        try:
+            card = await KnowledgeCard.get(ObjectId(item.card_id))
+            if card and card.linked_post_id:
+                from app.services.archive_service import submit_archive_answer
+                await submit_archive_answer(
+                    user, 
+                    card.linked_post_id, 
+                    str(item.answer or item.chosen_answer),
+                )
+                
+                # A/B 투표인 경우 통계도 업데이트
+                if card.type == "vote" and item.chosen_answer:
+                    voting_weight = max(1, user.stats.trust // 500)
+                    if not card.choice_matches: card.choice_matches = {}
+                    if not card.choice_wins: card.choice_wins = {}
+                    
+                    chosen = str(item.chosen_answer)
+                    unchosen = str(item.unchosen_answer or "")
+                    
+                    for ans in [chosen, unchosen]:
+                        card.choice_matches[ans] = card.choice_matches.get(ans, 0) + 1
+                        
+                    card.choice_wins[chosen] = card.choice_wins.get(chosen, 0) + voting_weight
+                    card.total_matches += 1
+                    card.trust_count += voting_weight
+                    await card.save()
+                elif card.type in ["teach", "quiz"]:
+                    card.trust_count += max(1, user.stats.trust // 500)
+                    await card.save()
+                    
+        except Exception as e:
+            print(f"[Sync] Failed to process card {item.card_id} for user {user.uid}: {e}")
+            
+        synced_count += 1
+        
+    # 유저 스탯 일괄 업데이트
+    user.stats.exp += total_exp
+    user.stats.gold += total_gold
+    user.stats.trust += total_trust
+    user.stats.intelligence += total_int
+    user.stats.process_level_up(max_stamina=user.max_stamina)
+    await user.save()
+    
+    return {
+        "success": True,
+        "syncedCount": synced_count,
+        "rewardExp": total_exp,
+        "rewardGold": total_gold
     }
