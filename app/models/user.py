@@ -27,6 +27,11 @@ class UserStats(BaseModel):
     is_onboarding_done: bool = False # 온보딩 완료 여부
     has_completed_first_commission: bool = False # 처음으로 커뮤니티 정정 요청(RLHF)을 완료했는지 여부
     title: str = ""               # 칭호 (텍스트 기반 보상)
+    
+    # ── [NEW] 게스트 동기화 어뷰징 방지용 필드 ──
+    last_guest_sync_date: str = ""           # 마지막 동기화 날짜 (YYYY-MM-DD)
+    synced_guest_stamina_today: int = 0      # 오늘 동기화로 이득 본 총 스태미나 양
+    synced_guest_tickets_today: int = 0      # 오늘 동기화로 소모한 총 티켓 양
 
     @property
     def max_exp(self) -> int:

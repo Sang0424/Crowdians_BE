@@ -33,6 +33,7 @@ class GuestStatsSyncRequest(BaseModel):
     exp_gained: int
     stamina_consumed: int
     intimacy_gained: int
+    tickets_consumed: int = 0
 
 
 class EquippedPartsResponse(BaseModel):

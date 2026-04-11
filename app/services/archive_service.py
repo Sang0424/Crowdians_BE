@@ -275,7 +275,7 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
         "isSos": post.is_sos,
         "category": post.category,
         "author": post_author_resp,
-        "answerCount": post.answer_count,
+        "answerCount": len(answer_responses),
         "targetUserId": post.target_user_id,
         "status": post.status,
         "createdAt": post.createdAt,
@@ -323,9 +323,8 @@ async def submit_archive_answer(user: User, post_id: str, content: str, backgrou
             # 하위 호환성 또는 동기 처리가 필요한 경우
             await _generate_vote_card_background(user, post_id, str(answer.id))
 
-    # 캐싱용 answer_count 증가
-    post.answer_count += 1
-    post.updatedAt = datetime.now(timezone.utc)
+    # 캐싱용 answer_count 원자적 증가 ($inc 사용)
+    await post.update({"$inc": {"answer_count": 1}, "$set": {"updatedAt": datetime.now(timezone.utc)}})
     
     # 1. 기본 보상 (EXP +10, Trust +2)
     user.stats.exp += 10
@@ -359,9 +358,8 @@ async def submit_archive_answer(user: User, post_id: str, content: str, backgrou
             reference_id=str(post.id)
         )
 
+    # status 업데이트가 필요한 경우만 추가 업데이트
     await archive_repo.update(db_obj=post, obj_in={
-        "answer_count": post.answer_count, 
-        "updatedAt": post.updatedAt,
         "status": post.status
     })
     
@@ -649,8 +647,8 @@ async def delete_archive_answer(user_id: str, answer_id: str) -> bool:
     except Exception:
         post = None
     if post:
-        post.answer_count = max(0, post.answer_count - 1)
-        await post.save()
+        # 원자적 감소 ($inc: -1)
+        await post.update({"$inc": {"answer_count": -1}})
         
     return True
 async def process_archive_task_background(

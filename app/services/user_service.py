@@ -37,18 +37,57 @@ async def delete_user(user: User) -> None:
     """
     await user_repo.delete(db_obj=user)
 
-async def sync_guest_stats(user: User, exp_gained: int, stamina_consumed: int, intimacy_gained: int) -> User:
+async def sync_guest_stats(
+    user: User, 
+    exp_gained: int, 
+    stamina_consumed: int, 
+    intimacy_gained: int,
+    tickets_consumed: int = 0
+) -> User:
     """
     게스트 스탯을 유저 스탯에 병합하고 레벨업을 처리합니다.
+    어뷰징 방지를 위해 일일 동기화 가능한 스태미나/티켓 상한선을 적용합니다.
     """
     stats = user.stats
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
-    # 일일 초기화 체크 (스태미너가 20으로 리셋될 수 있으므로 먼저 수행)
-    check_daily_reset(user)
+    # ── 1. 일일 동기화 카운트 초기화 ──
+    if stats.last_guest_sync_date != today_str:
+        stats.last_guest_sync_date = today_str
+        stats.synced_guest_stamina_today = 0
+        stats.synced_guest_tickets_today = 0
+
+    # ── 2. 일일 상한선 체크 (예: 스태미나 20, 티켓 1장 수준) ──
+    # 게스트 상태에서 무한 루프로 보상을 타가는 것을 방지하기 위함입니다.
+    STAMINA_SYNC_CAP = 20
+    TICKET_SYNC_CAP = 1
     
-    stats.exp += exp_gained
-    stats.intimacy += intimacy_gained
-    stats.stamina = max(0, stats.stamina - stamina_consumed)
+    remaining_stamina_cap = max(0, STAMINA_SYNC_CAP - stats.synced_guest_stamina_today)
+    remaining_ticket_cap = max(0, TICKET_SYNC_CAP - stats.synced_guest_tickets_today)
+    
+    # 상한선 내에서만 실제 보상 비율 계산
+    actual_stamina_to_sync = min(stamina_consumed, remaining_stamina_cap)
+    actual_tickets_to_sync = min(tickets_consumed, remaining_ticket_cap)
+    
+    # 보상 적용 비율 (스태미나 소모량 대비)
+    reward_ratio = 1.0
+    if stamina_consumed > 0:
+        reward_ratio = min(1.0, actual_stamina_to_sync / stamina_consumed)
+    
+    # ── 3. 스탯 적용 ──
+    check_daily_reset(user)  # 일일 초기화 먼저 수행
+    
+    # 실제 보상 적용
+    stats.exp += int(exp_gained * reward_ratio)
+    stats.intimacy += int(intimacy_gained * reward_ratio)
+    
+    # 스태미나 및 티켓 소모 반영
+    stats.stamina = max(0, stats.stamina - stamina_consumed) 
+    stats.learning_tickets = max(0, stats.learning_tickets - tickets_consumed)
+    
+    # 동기화 누적량 기록
+    stats.synced_guest_stamina_today += stamina_consumed
+    stats.synced_guest_tickets_today += tickets_consumed
     
     # 레벨업 처리
     stats.process_level_up(max_stamina=user.max_stamina)

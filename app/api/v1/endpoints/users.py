@@ -182,7 +182,8 @@ async def sync_guest_stats(
         current_user,
         request.exp_gained,
         request.stamina_consumed,
-        request.intimacy_gained
+        request.intimacy_gained,
+        request.tickets_consumed
     )
     
     stats = updated_user.stats
