@@ -478,8 +478,11 @@ async def submit_ab_vote(user: User | None, card_id: str, chosen_answer: str, un
     }
 
 
-async def sync_guest_academy_data(user: User, items: list) -> dict:
+async def sync_guest_academy_data(user: User, items: list, apply_rewards: bool = True) -> dict:
     """게스트 세션에서 쌓인 학습 데이터를 가입 시점에 일괄 동기화합니다."""
+    # 🌟 [Anti-Exploit] 최대 5개까지만 동기화 허용
+    items = items[:5]
+    
     total_exp = 0
     total_gold = 0
     total_trust = 0
@@ -592,14 +595,16 @@ async def sync_guest_academy_data(user: User, items: list) -> dict:
             
         synced_count += 1
         
-    if user:
-        # 유저 스탯 일괄 업데이트
+    if user and apply_rewards:
+        # 유저 스탯 일괄 업데이트 (티켓이 있을 때만 보상 지급)
         user.stats.exp += total_exp
         user.stats.gold += total_gold
         user.stats.trust += total_trust
         user.stats.intelligence += total_int
         user.stats.process_level_up(max_stamina=user.max_stamina)
         await user.save()
+    elif user and not apply_rewards:
+        print(f"[Sync] User {user.uid} synced {synced_count} items without rewards (No tickets).")
     
     return {
         "success": True,

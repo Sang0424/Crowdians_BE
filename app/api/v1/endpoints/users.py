@@ -12,9 +12,15 @@ from app.schemas.user import (
     UserActivitiesResponse,
     DeleteAccountResponse,
     GuestStatsSyncRequest,
+    GuestFullSyncRequest,
     CharacterTypeUpdateRequest,
     NicknameUpdateRequest,
     TitleUpdateRequest,
+)
+from app.schemas.academy import (
+    CardRejectResponse,
+    StartSessionResponse,
+    GuestAcademySyncRequest,
 )
 from app.services.user_service import (
     get_user_by_uid,
@@ -206,6 +212,49 @@ async def sync_guest_stats(
         isOnboardingDone=stats.is_onboarding_done,
         hasCompletedFirstCommission=stats.has_completed_first_commission,
         learningTickets = stats.learning_tickets,
+        maxLearningTickets=updated_user.max_learning_tickets,
+        title=updated_user.title or "",
+    )
+
+
+@router.post(
+    "/users/me/sync-guest-full",
+    response_model=UserStatsResponse,
+    summary="게스트 데이터 통합 동기화",
+    description="로그인 시 게스트 시절의 활동(스탯, 아카데미, 아카이브)을 1장의 티켓으로 통합 동기화합니다.",
+)
+async def sync_guest_full(
+    request: GuestFullSyncRequest,
+    current_user: CurrentUser,
+):
+    from app.services.user_service import sync_guest_full_service
+    updated_user = await sync_guest_full_service(
+        current_user,
+        request.stats,
+        request.academy_items,
+        request.archive_answers
+    )
+    
+    stats = updated_user.stats
+    
+    return UserStatsResponse(
+        level=stats.level,
+        exp=stats.exp,
+        maxExp=stats.max_exp,
+        gold=stats.gold,
+        stamina=stats.stamina,
+        maxStamina=updated_user.max_stamina,
+        trust=stats.trust,
+        intelligence=stats.intelligence,
+        courage=stats.courage,
+        intimacy=stats.intimacy,
+        dailyChatExp=stats.daily_chat_exp,
+        dailyPetCount=stats.daily_pet_count,
+        dailySosCount=stats.daily_sos_count,
+        dailyCommissionCount=stats.daily_commission_count,
+        isOnboardingDone=stats.is_onboarding_done,
+        hasCompletedFirstCommission=stats.has_completed_first_commission,
+        learningTickets=stats.learning_tickets,
         maxLearningTickets=updated_user.max_learning_tickets,
         title=updated_user.title or "",
     )

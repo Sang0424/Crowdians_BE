@@ -94,6 +94,60 @@ async def sync_guest_stats(
         
     return await user_repo.update(db_obj=user, obj_in=user)
 
+async def sync_guest_full_service(
+    user: User, 
+    stats_req: any,
+    academy_items: list,
+    archive_answers: list
+) -> User:
+    """
+    [Atomic Sync Session]
+    모든 게스트 데이터를 하나의 티켓 세션으로 묶어 처리합니다.
+    1. 티켓 잔여량 확인 (1장 소모 가능 여부)
+    2. 아카데미 데이터 동기화 (Max 5개)
+    3. 아카이브 데이터 동기화 (Max 5개)
+    4. 일반 스탯 합산
+    """
+    check_daily_reset(user)
+    
+    # 1. 리워드 에너지(티켓) 확인
+    has_reward_energy = (user.stats.learning_tickets > 0)
+    
+    # 2. 세션당 티켓 1장 차감 (보상이 있을 때만)
+    if has_reward_energy:
+        user.stats.learning_tickets -= 1
+        print(f"[Sync] User {user.uid} consumed 1 ticket for a full sync session.")
+    else:
+        print(f"[Sync] User {user.uid} syncing without rewards (No tickets left).")
+
+    # 3. 아카데미 동기화 (Helper 호출, 내부에서 보상 체크)
+    from app.services.academy_service import sync_guest_academy_data
+    await sync_guest_academy_data(user, academy_items, apply_rewards=has_reward_energy)
+    
+    # 4. 아카이브 동기화 (최대 5개 제한)
+    from app.services.archive_service import submit_archive_answer
+    archive_items_to_sync = archive_answers[:5]
+    for item in archive_items_to_sync:
+        try:
+            # pydantic 객체일 경우 .itemId, 아닐 경우 dict access
+            item_id = getattr(item, 'itemId', item.get('itemId'))
+            content = getattr(item, 'content', item.get('content'))
+            if item_id and content:
+                await submit_archive_answer(user, item_id, content, apply_rewards=has_reward_energy)
+        except Exception as e:
+            print(f"[Sync] Archive item ignore due to error: {e}")
+
+    # 5. 일반 스탯 합산 (보상이 있을 때만)
+    if has_reward_energy:
+        user.stats.exp += stats_req.exp_gained
+        user.stats.intimacy += stats_req.intimacy_gained
+        # 스태미나 소모는 티켓 여부와 상관없이 실제 소모량만큼 반영 (기존 계획 준수)
+        user.stats.stamina = max(0, user.stats.stamina - stats_req.stamina_consumed)
+
+    # 6. 최종 레벨업 판정 및 저장
+    user.stats.process_level_up(max_stamina=user.max_stamina)
+    return await user_repo.update(db_obj=user, obj_in=user)
+
 async def get_user_activities(
     uid: str,
     tab: str,  # answered | asked | saved | voted

@@ -3,7 +3,8 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from app.schemas.academy import GuestAcademySyncItem
 
 
 # ── 공통 스탯/캐릭터 (auth.py에서 재사용) ──
@@ -34,6 +35,15 @@ class GuestStatsSyncRequest(BaseModel):
     stamina_consumed: int
     intimacy_gained: int
     tickets_consumed: int = 0
+
+class GuestArchiveSyncItem(BaseModel):
+    itemId: str
+    content: str
+
+class GuestFullSyncRequest(BaseModel):
+    stats: GuestStatsSyncRequest
+    academy_items: List[GuestAcademySyncItem] = Field(default_factory=list)
+    archive_answers: List[GuestArchiveSyncItem] = Field(default_factory=list)
 
 
 class EquippedPartsResponse(BaseModel):

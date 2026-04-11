@@ -289,7 +289,7 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
     }
 
 
-async def submit_archive_answer(user: User, post_id: str, content: str, background_tasks: any = None) -> str:
+async def submit_archive_answer(user: User, post_id: str, content: str, background_tasks: any = None, apply_rewards: bool = True) -> str:
     """질문에 답변을 작성합니다."""
     try:
         post = await archive_repo.get_by_id(post_id)
@@ -326,12 +326,13 @@ async def submit_archive_answer(user: User, post_id: str, content: str, backgrou
     # 캐싱용 answer_count 원자적 증가 ($inc 사용)
     await post.update({"$inc": {"answer_count": 1}, "$set": {"updatedAt": datetime.now(timezone.utc)}})
     
-    # 1. 기본 보상 (EXP +10, Trust +2)
-    user.stats.exp += 10
-    user.stats.trust += 2
+    if apply_rewards:
+        # 1. 기본 보상 (EXP +10, Trust +2)
+        user.stats.exp += 10
+        user.stats.trust += 2
     
-    # 2. 직접 의뢰 지정 전문가가 답변한 경우 상태 업데이트 및 보상 고정 지급
-    if is_commissioned_expert and post.status == "commissioned":
+    # 2. 직접 의뢰 지정 전문가가 답변한 경우 상태 업데이트 및 보상 고정 지급 (동기화가 아닌 직접 작성 시에만 발생함)
+    if apply_rewards and is_commissioned_expert and post.status == "commissioned":
         post.status = "answered"
         # 추가 보상 (고정 보너스 Gold/Exp/Trust)
         bonus_gold = 100
