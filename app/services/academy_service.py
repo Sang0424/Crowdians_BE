@@ -247,12 +247,11 @@ async def submit_card_answer(user: User | None, card_id: str, answer: str | int,
             user.stats.process_level_up(max_stamina=user.max_stamina)
                 
             # 🌟 7. [수정] 카드의 trust_count 증가 (단순 +1이 아닌 가중치 반영)
+            # 게스트일 때는 동기화 시점에 반영하기 위해 여기서는 건너뜁니다.
             card.trust_count += voting_weight
             
             await user.save()
-            
-        # 게스트든 유저든 카드의 통계 데이터는 저장해야 함
-        await card.save()
+            await card.save()
     
     # 8. 카드 응답 내역 저장 (유저일 때만)
     if user:
@@ -358,23 +357,24 @@ async def submit_ab_vote(user: User | None, card_id: str, chosen_answer: str, un
             "message": "부정확한 답변을 선택하셨습니다. 신뢰도가 하락합니다.",
         }
 
-    # 4. 신뢰도 기반 가중치 계산 (1000점당 1점의 가중치 등 정책에 맞게 조정 가능)
+    # 4. 신뢰도 기반 가중치 계산
     voting_weight = max(1, (user.stats.trust // 500) if user else 2)
 
     # 5. 통계 업데이트
     if not card.choice_matches: card.choice_matches = {}
     if not card.choice_wins: card.choice_wins = {}
 
-    for ans in [chosen_answer, unchosen_answer]:
-        card.choice_matches[ans] = card.choice_matches.get(ans, 0) + 1
-        if ans not in card.choice_wins: card.choice_wins[ans] = 0
-            
-    card.choice_wins[chosen_answer] += voting_weight
-    card.total_matches += 1
+    if user:
+        for ans in [chosen_answer, unchosen_answer]:
+            card.choice_matches[ans] = card.choice_matches.get(ans, 0) + 1
+            if ans not in card.choice_wins: card.choice_wins[ans] = 0
+                
+        card.choice_wins[chosen_answer] += voting_weight
+        card.total_matches += 1
 
-    # Beanie가 딕셔너리 내부 변경사항을 감지하도록 재할당
-    card.choice_matches = dict(card.choice_matches)
-    card.choice_wins = dict(card.choice_wins)
+        # Beanie가 딕셔너리 내부 변경사항을 감지하도록 재할당
+        card.choice_matches = dict(card.choice_matches)
+        card.choice_wins = dict(card.choice_wins)
 
     # 6. 보상 지급 (기존 보상 로직 통합)
     exp_gained = 10
@@ -383,21 +383,23 @@ async def submit_ab_vote(user: User | None, card_id: str, chosen_answer: str, un
     int_gained = 1
     
     if user:
-        # [Trust Mapping] 만약 선택지에 연결된 답변ID가 있다면 신뢰도 투표 동기화
-        if hasattr(card, "choice_answer_ids") and card.choice_answer_ids:
-            answer_id = card.choice_answer_ids.get(str(chosen_answer))
-            if answer_id:
-                try:
-                    from app.services.archive_service import toggle_trust_vote
-                    # 이미 투표했으면 중복 투표 방지를 위해 취소 후 재투표가 아닌, 
-                    # 한 번도 안 한 상태일 때만 투표하도록 처리 (toggle_trust_vote 내부 로직 참고)
-                    from app.models.archive import ArchiveAnswer
-                    from bson import ObjectId
-                    target_ans = await ArchiveAnswer.get(ObjectId(answer_id))
-                    if target_ans and user.uid not in target_ans.voted_user_ids:
-                        await toggle_trust_vote(user, answer_id)
-                except Exception as e:
-                    print(f"Failed to auto-toggle trust vote: {e}")
+        # 🌟 [Archive Trust Update] 투표 결과를 실제 답변의 신뢰도에 반영
+        if card.linked_post_id:
+            try:
+                from app.models.archive import ArchiveAnswer
+                # 선택한 답변 내용과 일치하는 ArchiveAnswer 찾기
+                answer_doc = await ArchiveAnswer.find_one(
+                    ArchiveAnswer.post_id == card.linked_post_id,
+                    ArchiveAnswer.content == chosen_answer
+                )
+                if answer_doc:
+                    # 아직 이 유저가 투표하지 않았다면 가중치 반영 (voted_user_ids 필드로 중복 체크)
+                    if user.uid not in answer_doc.voted_user_ids:
+                        answer_doc.voted_user_ids.append(user.uid)
+                        answer_doc.trust_count += voting_weight
+                        await answer_doc.save()
+            except Exception as e:
+                print(f"[Academy] Failed to update Archive Trust during vote: {e}")
 
         user.stats.exp += exp_gained
         user.stats.gold += gold_gained
@@ -405,9 +407,7 @@ async def submit_ab_vote(user: User | None, card_id: str, chosen_answer: str, un
         user.stats.intelligence += int_gained
         user.stats.process_level_up(max_stamina=user.max_stamina)
         await user.save()
-
-    # 게스트든 유저든 카드 투표 데이터 저장
-    await card.save()
+        await card.save()
 
     # 🌟 7. 골든 데이터셋 임계점 돌파 검사 (threshold = 100)
     MATCHES_THRESHOLD = 100
@@ -490,25 +490,26 @@ async def sync_guest_academy_data(user: User, items: list) -> dict:
     from app.models.academy import CardResponse
     
     for item in items:
-        # 이미 답변한 카드인지 중복 체크 방지 (선택 사항)
-        exists = await CardResponse.find_one(
-            CardResponse.user_id == user.uid,
-            CardResponse.card_id == item.card_id
-        )
-        if exists:
-            continue
+        if user:
+            exists = await CardResponse.find_one(
+                CardResponse.user_id == user.uid,
+                CardResponse.card_id == item.card_id
+            )
+            if exists:
+                continue
             
-        # 1. 정식 응답 로그 생성
-        response_log = CardResponse(
-            user_id=user.uid,
-            card_id=item.card_id,
-            answer=item.answer or item.chosen_answer,
-            is_correct=item.is_correct,
-            reward_exp=item.reward_exp,
-            reward_gold=item.reward_gold,
-            reward_trust=item.reward_trust,
-        )
-        await response_log.insert()
+        if user:
+            # 1. 정식 응답 로그 생성
+            response_log = CardResponse(
+                user_id=user.uid,
+                card_id=item.card_id,
+                answer=item.answer or item.chosen_answer,
+                is_correct=item.is_correct,
+                reward_exp=item.reward_exp,
+                reward_gold=item.reward_gold,
+                reward_trust=item.reward_trust,
+            )
+            await response_log.insert()
         
         # 2. 관련 서비스 연동 (Archive 등)
         # 퀴즈 보상 합산
@@ -519,69 +520,86 @@ async def sync_guest_academy_data(user: User, items: list) -> dict:
         
         # 3. ArchivePost 연동 처리 (있는 경우)
         try:
+            from bson import ObjectId
             card = await KnowledgeCard.get(ObjectId(item.card_id))
-            if card and card.linked_post_id:
-                # ── 카드 타입별 처리 ──
-                if card.type == "vote":
-                    # [VOTE TYPE] 선택지에 연결된 답변ID가 있다면 신뢰도 투표 동기화
-                    if hasattr(card, "choice_answer_ids") and card.choice_answer_ids:
-                        chosen_ans_text = str(item.answer or item.chosen_answer)
-                        answer_id = card.choice_answer_ids.get(chosen_ans_text)
-                        if answer_id:
-                            try:
-                                from app.services.archive_service import toggle_trust_vote
-                                from app.models.archive import ArchiveAnswer
-                                target_ans = await ArchiveAnswer.get(ObjectId(answer_id))
-                                if target_ans and user.uid not in target_ans.voted_user_ids:
-                                    await toggle_trust_vote(user, answer_id)
-                            except Exception as e:
-                                print(f"Failed to auto-toggle trust vote in sync: {e}")
-                else:
-                    # [TEACH/QUIZ TYPE] 답변 생성
-                    from app.services.archive_service import submit_archive_answer
-                    await submit_archive_answer(
-                        user, 
-                        card.linked_post_id, 
-                        str(item.answer or item.chosen_answer),
-                    )
+            if card:
+                # 🌟 [수정] 모든 동기화 데이터에 대해 KnowledgeCard/Archive 통계 반영
+                # 이미 통계가 반영된 항목(익명 동기화 등)이면 건너뜜
+                is_already_synced = getattr(item, 'stats_synced', False)
                 
-                # A/B 투표 통계 업데이트 (모든 Vote 타입)
-                if card.type == "vote" and item.chosen_answer:
-                    voting_weight = max(1, user.stats.trust // 500)
-                    if not card.choice_matches: card.choice_matches = {}
-                    if not card.choice_wins: card.choice_wins = {}
-                    
-                    chosen = str(item.chosen_answer)
-                    unchosen = str(item.unchosen_answer or "")
-                    
-                    for ans in [chosen, unchosen]:
-                        card.choice_matches[ans] = card.choice_matches.get(ans, 0) + 1
+                # 신뢰도 기반 가중치 계산 (유저가 있으면 유저 신뢰도, 없으면 기본값)
+                voting_weight = max(1, (user.stats.trust // 500) if user else 2)
+                
+                # A/B 투표(Vote)인 경우
+                if card.type == "vote" and (item.chosen_answer is not None):
+                    # 1. KnowledgeCard 통계 업데이트 (아직 반영 안 된 경우만)
+                    if not is_already_synced:
+                        if not card.choice_matches: card.choice_matches = {}
+                        if not card.choice_wins: card.choice_wins = {}
                         
-                    card.choice_wins[chosen] = card.choice_wins.get(chosen, 0) + voting_weight
-                    card.total_matches += 1
-                    card.trust_count += voting_weight
-                    
-                    # Beanie 감지용 재할당
-                    card.choice_matches = dict(card.choice_matches)
-                    card.choice_wins = dict(card.choice_wins)
-                    
-                    await card.save()
+                        chosen = str(item.chosen_answer)
+                        unchosen = str(item.unchosen_answer or "")
+                        
+                        for ans in [chosen, unchosen]:
+                            card.choice_matches[ans] = card.choice_matches.get(ans, 0) + 1
+                        
+                        card.choice_wins[chosen] = card.choice_wins.get(chosen, 0) + voting_weight
+                        card.total_matches += 1
+                        
+                        card.choice_matches = dict(card.choice_matches)
+                        card.choice_wins = dict(card.choice_wins)
+                        await card.save()
+
+                    # 2. ArchiveAnswer에도 Trust 반영
+                    if card.linked_post_id:
+                        from app.models.archive import ArchiveAnswer
+                        answer_doc = await ArchiveAnswer.find_one(
+                            ArchiveAnswer.post_id == card.linked_post_id,
+                            ArchiveAnswer.content == str(item.chosen_answer)
+                        )
+                        if answer_doc:
+                            # 유저가 있고 아직 투표하지 않았다면 UID 추가
+                            if user and user.uid not in answer_doc.voted_user_ids:
+                                answer_doc.voted_user_ids.append(user.uid)
+                            
+                            # 신뢰도 증가는 아직 반영 안 된 경우만 처리
+                            if not is_already_synced:
+                                answer_doc.trust_count += voting_weight
+                                
+                            await answer_doc.save()
+
+                # Teach나 Quiz인 경우
                 elif card.type in ["teach", "quiz"]:
-                    card.trust_count += max(1, user.stats.trust // 500)
-                    await card.save()
+                    # 1. KnowledgeCard 통계 업데이트 (아직 반영 안 된 경우만)
+                    if not is_already_synced:
+                        card.trust_count += voting_weight
+                        await card.save()
+                    
+                    # 2. 유저가 있다면 아카이브 답변 정식 등록
+                    if user and card.linked_post_id:
+                        from app.services.archive_service import submit_archive_answer
+                        try:
+                            await submit_archive_answer(
+                                user, 
+                                card.linked_post_id, 
+                                str(item.answer or item.chosen_answer or ""),
+                            )
+                        except Exception as e:
+                            print(f"[Sync] Failed to submit archive answer: {e}")
                     
         except Exception as e:
             print(f"[Sync] Failed to process card {item.card_id} for user {user.uid}: {e}")
             
         synced_count += 1
         
-    # 유저 스탯 일괄 업데이트
-    user.stats.exp += total_exp
-    user.stats.gold += total_gold
-    user.stats.trust += total_trust
-    user.stats.intelligence += total_int
-    user.stats.process_level_up(max_stamina=user.max_stamina)
-    await user.save()
+    if user:
+        # 유저 스탯 일괄 업데이트
+        user.stats.exp += total_exp
+        user.stats.gold += total_gold
+        user.stats.trust += total_trust
+        user.stats.intelligence += total_int
+        user.stats.process_level_up(max_stamina=user.max_stamina)
+        await user.save()
     
     return {
         "success": True,

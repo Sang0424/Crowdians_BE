@@ -46,6 +46,7 @@ class GuestAcademySyncItem(BaseModel):
     reward_gold: int = 0
     reward_trust: int = 0
     reward_intelligence: int = 0
+    stats_synced: bool = False
 
 class GuestAcademySyncRequest(BaseModel):
     items: list[GuestAcademySyncItem]

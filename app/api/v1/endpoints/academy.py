@@ -156,7 +156,7 @@ async def reject_card(
 )
 async def sync_academy_data(
     request: GuestAcademySyncRequest,
-    current_user: CurrentUser,
+    current_user: CurrentUserOptional,
 ):
     try:
         result = await sync_guest_academy_data(current_user, request.items)
