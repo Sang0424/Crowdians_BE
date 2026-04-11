@@ -262,6 +262,7 @@ async def get_archive_post_detail(post_id: str, user_uid: str) -> dict:
         "isDirectCommission": bool(post.target_user_id),
         "tags": post.tags,
         "summary": post.summary,
+        "chatContext": [m.model_dump() for m in post.chat_context] if post.chat_context else [],
         "answers": answer_responses,
     }
 
@@ -648,7 +649,10 @@ async def process_archive_task_background(
         metadata = await extract_metadata_with_langchain(
             raw_prompt=raw_prompt,
             original_ai_answer=original_ai_answer,
-            chat_history=chat_history
+            chat_history=chat_history,
+            character_type=user.character.type,
+            nickname=user.nickname,
+            locale=locale
         )
         
         # [NEW] 질문 유효성 검사 및 필터링 (기본값 False로 더 엄격하게 처리)

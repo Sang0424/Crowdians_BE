@@ -129,6 +129,7 @@ async def get_daily_cards(user: User, ticket_index: int, locale: str = "ko") -> 
 
 
 async def start_academy_session(user: User) -> dict:
+    """학습 세션을 시작합니다. 지식 티켓 1장을 소모합니다."""
     if check_daily_reset(user):
         await user.save()
         

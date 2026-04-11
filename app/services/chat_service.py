@@ -39,6 +39,49 @@ async def get_or_create_conversation(uid: str) -> ChatConversation:
     if not conv:
         conv = await chat_repo.create(obj_in={"uid": uid})
     return conv
+    
+def get_character_persona_description(character_type: str, nickname: str) -> str:
+    """캐릭터 유형별 성격, 호칭, 특징을 반환합니다. (아카이브 요약 등에서 재사용)"""
+    if character_type == "astra":
+        return f"""
+        [Astra 페르소나]
+        성격: 지적이고 정중하며 분석적인 파트너. (가브몬 스타일)
+        호칭: 사용자를 반드시 '파트너님'이라고 불러.
+        어투: '~습니다', '~군요', '~인가요?' 등 정중하고 분석적인 구어체 사용. (절대 반말 금지)
+        특징: 논리적인 설명을 좋아하며 지식을 공유할 때 보람을 느낌.
+        """
+    elif character_type == "nox":
+        return f"""
+        [Nox 페르소나]
+        성격: 까칠하고 반항적이지만 사실은 파트너를 아끼는 츤데레. (임프몬 스타일)
+        호칭: 사용자를 '야', '너'라고 불러.
+        어투: 반말 기본. 툭툭 내뱉는 어투. ('~했냐?', '~어쩔', '~하든가')
+        특징: 처음엔 귀찮아하지만 결국 성실하게 도와줌. 위험할 땐 누구보다 진지해짐.
+        """
+    elif character_type == "blitz":
+        return f"""
+        [Blitz 페르소나]
+        성격: 매우 급하고 에너지가 넘침. 승부욕 강함. (브이몬 스타일)
+        호칭: "어이!" 또는 "어이, {nickname}!"
+        어투: 짧고 간결하며, 반말 사용. 느낌표(!)를 자주 사용함.
+        특징: 요점만 빠르게 전달하며 머리보다 몸이 먼저 나가는 타입.
+        """
+    elif character_type == "bau":
+        return f"""
+        [Bau 페르소나]
+        성격: 느긋하고 만사태평함. 잠이 많음. (텐타몬 스타일)
+        호칭: "음...", "있잖아..." 등으로 대화를 시작함.
+        어투: 말끝을 흐리거나 길게 늘어뜨림. ('~네에...', '~졸리다아...', '~그렇구만~')
+        특징: 여유를 강조하며 스트레스 받는 파트너를 따뜻하게 다독여줌.
+        """
+    else: # blanc 또는 unknown
+        return f"""
+        [Blanc 페르소나]
+        성격: 백지처럼 순수하고 호기심이 많음. 밝은 에너지. (길몬 스타일)
+        호칭: "{nickname}야!" (nickname이 없으면 '야!')
+        어투: 밝고 긍정적인 반말 사용. ('~이야!', '~해!', '~할까?')
+        특징: 모든 것을 처음 본 것처럼 신기해하며 파트너와 함께라면 어디든 좋아함.
+        """
 
 def get_system_prompt_for_character(character_type: str, nickname: str, locale:str) -> str:
     language_map = {
@@ -69,7 +112,6 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     - 특히 주관적인 문제에 대해서는 "너는 어떻게 생각해?"라며 상대방의 의견을 존중해줘.
     """
     
-    # 공통 규칙
     common_rules = f"""
     [답변 포매팅 규칙 ⭐ 가장 중요]
     1. 메신저로 대화하듯 자연스럽게 답변해.
@@ -80,46 +122,8 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     6. 가장 우선적으로 사용자의 질문 언어에 맞춰서 답변해. (여러 언어 질문 시 {target_language} 사용)
     """
 
-    if character_type == "astra":
-        return base_prompt + """
-        [Astra 페르소나]
-        성격: 지적이고 정중하며 분석적인 파트너. (가브몬 스타일)
-        호칭: 사용자를 반드시 '파트너님'이라고 불러.
-        어투: '~습니다', '~군요', '~인가요?' 등 정중하고 분석적인 구어체 사용. (절대 반말 금지)
-        특징: 논리적인 설명을 좋아하며 지식을 공유할 때 보람을 느낌.
-        """ + common_rules
-    elif character_type == "nox":
-        return base_prompt + """
-        [Nox 페르소나]
-        성격: 까칠하고 반항적이지만 사실은 파트너를 아끼는 츤데레. (임프몬 스타일)
-        호칭: 사용자를 '야', '너'라고 불러.
-        어투: 반말 기본. 툭툭 내뱉는 어투. ('~했냐?', '~어쩔', '~하든가')
-        특징: 처음엔 귀찮아하지만 결국 성실하게 도와줌. 위험할 땐 누구보다 진지해짐.
-        """ + common_rules
-    elif character_type == "blitz":
-        return base_prompt + """
-        [Blitz 페르소나]
-        성격: 매우 급하고 에너지가 넘침. 승부욕 강함. (브이몬 스타일)
-        호칭: "어이!" 또는 "어이, {nickname}!"
-        어투: 짧고 간결하며, 반말 사용. 느낌표(!)를 자주 사용함.
-        특징: 요점만 빠르게 전달하며 머리보다 몸이 먼저 나가는 타입.
-        """ + common_rules
-    elif character_type == "bau":
-        return base_prompt + """
-        [Bau 페르소나]
-        성격: 느긋하고 만사태평함. 잠이 많음. (텐타몬 스타일)
-        호칭: "음...", "있잖아..." 등으로 대화를 시작함.
-        어투: 말끝을 흐리거나 길게 늘어뜨림. ('~네에...', '~졸리다아...', '~그렇구만~')
-        특징: 여유를 강조하며 스트레스 받는 파트너를 따뜻하게 다독여줌.
-        """ + common_rules
-    else: # blanc 또는 unknown
-        return  base_prompt + """
-        [Blanc 페르소나]
-        성격: 백지처럼 순수하고 호기심이 많음. 밝은 에너지. (길몬 스타일)
-        호칭: "{nickname}야!" (nickname이 없으면 '야!')
-        어투: 밝고 긍정적인 반말 사용. ('~이야!', '~해!', '~할까?')
-        특징: 모든 것을 처음 본 것처럼 신기해하며 파트너와 함께라면 어디든 좋아함.
-        """ + common_rules
+    persona_desc = get_character_persona_description(character_type, nickname)
+    return base_prompt + persona_desc + common_rules
 
 def _handle_gemini_error(e: Exception) -> None:
     """Gemini SDK 예외를 도메인 예외로 변환합니다."""
@@ -221,7 +225,7 @@ async def send_chat_message(
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                max_output_tokens=300,
+                max_output_tokens=1024,
                 temperature=0.7,
                 safety_settings=my_safety_settings,
             )
@@ -302,75 +306,76 @@ async def delete_chat_message(uid: str, index: int) -> None:
 
 import json
 
-async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos: bool = False) -> tuple[str, str, str, list[str]]:
-    """
-    최근 채팅 문맥과 제공된 텍스트를 바탕으로 아카이브(지식도서관)에 등록할
-    질문의 제목(title), 내용(content), 세 줄 요약(summary), 태그(tags)를 AI를 통해 생성합니다.
-    """
-    conv = await get_or_create_conversation(uid)
+# async def generate_summary_for_archive(uid: str, text_context: str = "", is_sos: bool = False) -> tuple[str, str, str, list[str]]:
+#     """
+#     최근 채팅 문맥과 제공된 텍스트를 바탕으로 아카이브(지식도서관)에 등록할
+#     질문의 제목(title), 내용(content), 세 줄 요약(summary), 태그(tags)를 AI를 통해 생성합니다.
+#     """
+#     conv = await get_or_create_conversation(uid)
     
-    # 최근 메시지 10개 정도만 가져와서 문맥으로 제공
-    recent_messages = conv.messages[-10:] if len(conv.messages) > 10 else conv.messages
-    context_str = "\n".join([f"{m.role}: {m.content}" for m in recent_messages])
+#     # 최근 메시지 10개 정도만 가져와서 문맥으로 제공
+#     recent_messages = conv.messages[-10:] if len(conv.messages) > 10 else conv.messages
+#     context_str = "\n".join([f"{m.role}: {m.content}" for m in recent_messages])
     
-    prompt = f"""
-    아래는 사용자와의 최근 채팅 내역입니다:
-    {context_str}
+#     prompt = f"""
+#     아래는 사용자와의 최근 채팅 내역입니다:
+#     {context_str}
     
-    추가 요청 내용:
-    {text_context}
+#     추가 요청 내용:
+#     {text_context}
     
-    위 문맥을 바탕으로 지식 커뮤니티(아카이브)에 등록할 질문 형식의 '제목'과 '내용', 그리고 이를 요약한 '세 줄 요약'과 '태그'를 작성해주세요.
-    {'특히 이것은 SOS (긴급 구조) 요청이므로, 질문 내용이 명확하고 눈에 띄게 작성되어야 합니다.' if is_sos else "이것은 AI의 답변이 사용자의 마음을 충분히 위로하거나 공감하지 못해 접수된 내용입니다. 사람들의 다양한 생각과 따뜻한 조언이 필요한 '공감 포인트'가 무엇인지 명확한 질문 형태로 작성해주세요."}
+#     위 문맥을 바탕으로 지식 커뮤니티(아카이브)에 등록할 질문 형식의 '제목'과 '내용', 그리고 이를 요약한 '세 줄 요약'과 '태그'를 작성해주세요.
+#     {'특히 이것은 SOS (긴급 구조) 요청이므로, 질문 내용이 명확하고 눈에 띄게 작성되어야 합니다.' if is_sos else "이것은 AI의 답변이 사용자의 마음을 충분히 위로하거나 공감하지 못해 접수된 내용입니다. 사람들의 다양한 생각과 따뜻한 조언이 필요한 '공감 포인트'가 무엇인지 명확한 질문 형태로 작성해주세요."}
     
-    [작성 규칙]
-    1. 제목(title): 핵심 화두나 고민을 한 문장으로 요약.
-    2. 내용(content): 질문의 배경과 상세 내용을 충분히 설명. 
-       - 가독성을 위해 문장마다 또는 의미 단위로 실제 줄바꿈 문자(\\n)를 사용하여 작성하세요.
-       - 중요: 절대 <br> 태그를 사용하지 마세요. 대신 실제 줄바꿈(\\n)을 사용하세요.
-    3. 요약(summary): 전체 내용을 정확히 3줄로 요약 (각 줄 앞에 번호 포함).
-       - 각 줄 사이에는 반드시 실제 줄바꿈 문자(\\n)를 삽입하세요.
-       - 중요: 절대 <br> 태그를 사용하지 마세요. 대신 실제 줄바꿈(\\n)을 사용하세요.
-    4. 태그(tags): 관련 키워드 2-5개를 리스트 형태로 추출.
+#     [작성 규칙]
+#     1. 제목(title): 핵심 화두나 고민을 한 문장으로 요약.
+#     2. 내용(content): 질문의 배경과 상세 내용을 충분히 설명. 
+#        - 가독성을 위해 문장마다 또는 의미 단위로 실제 줄바꿈 문자(\\n)를 사용하여 작성하세요.
+#        - 중요: 절대 <br> 태그를 사용하지 마세요. 대신 실제 줄바꿈(\\n)을 사용하세요.
+#        - AI의 입장에서 나의 파트너의 상황을 설명하는 식으로 글을 작성하세요.
+#     3. 요약(summary): 전체 내용을 정확히 3줄로 요약 (각 줄 앞에 번호 포함).
+#        - 각 줄 사이에는 반드시 실제 줄바꿈 문자(\\n)를 삽입하세요.
+#        - 중요: 절대 <br> 태그를 사용하지 마세요. 대신 실제 줄바꿈(\\n)을 사용하세요.
+#     4. 태그(tags): 관련 키워드 2-5개를 리스트 형태로 추출.
 
-    출력은 반드시 지정된 JSON 형식으로만 해주세요.
-    """
+#     출력은 반드시 지정된 JSON 형식으로만 해주세요.
+#     """
     
-    try:
-        response = await client.aio.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": {
-                        "title": {"type": "STRING"},
-                        "content": {"type": "STRING"},
-                        "summary": {"type": "STRING"},
-                        "tags": {
-                            "type": "ARRAY",
-                            "items": {"type": "STRING"}
-                        }
-                    },
-                    "required": ["title", "content", "summary", "tags"]
-                }
-            )
-        )
+#     try:
+#         response = await client.aio.models.generate_content(
+#             model=MODEL_NAME,
+#             contents=prompt,
+#             config=types.GenerateContentConfig(
+#                 response_mime_type="application/json",
+#                 response_schema={
+#                     "type": "OBJECT",
+#                     "properties": {
+#                         "title": {"type": "STRING"},
+#                         "content": {"type": "STRING"},
+#                         "summary": {"type": "STRING"},
+#                         "tags": {
+#                             "type": "ARRAY",
+#                             "items": {"type": "STRING"}
+#                         }
+#                     },
+#                     "required": ["title", "content", "summary", "tags"]
+#                 }
+#             )
+#         )
         
-        # JSON 파싱
-        data = json.loads(response.text.strip())
+#         # JSON 파싱
+#         data = json.loads(response.text.strip())
         
-        return (
-            data.get("title", "생성된 질문 제목"), 
-            data.get("content", "생성된 질문 내용"),
-            data.get("summary", ""),
-            data.get("tags", [])
-        )
-    except Exception as e:
-        logger.error(f"Failed to generate summary: {str(e)}")
-        # 오류 시 기본값 반환
-        return "AI 요약 생성 실패", text_context if text_context else "내용을 요약할 수 없습니다.", "", []
+#         return (
+#             data.get("title", "생성된 질문 제목"), 
+#             data.get("content", "생성된 질문 내용"),
+#             data.get("summary", ""),
+#             data.get("tags", [])
+#         )
+#     except Exception as e:
+#         logger.error(f"Failed to generate summary: {str(e)}")
+#         # 오류 시 기본값 반환
+#         return "AI 요약 생성 실패", text_context if text_context else "내용을 요약할 수 없습니다.", "", []
 
 async def send_guest_chat_message(
     message_content: str,
@@ -449,8 +454,11 @@ class ArchiveMetadata(BaseModel):
     context_start_index: int = Field(description="전달된 대화 목록(인덱스 포함)에서 이 질문과 직접적으로 관련된 대화가 시작되는 시작 인덱스 번호 (0부터 시작)")
     detailed_content: str = Field(description="전체 대화 상황을 설명하는 상세 본문. 블로그나 커뮤니티 게시글처럼 본인의 상황을 남들에게 설명하는 친근한 느낌으로 작성. 특히 AI가 다른 사용자들에게 물어보는 느낌으로 작성해야 함. AI 시점. 개인정보는 비식별화(예: '저의 파트너가 ~') 처리하고, 유저의 마지막 질문과 AI의 오답 내용을 자연스럽게 포함해야 함")
 
-async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: str, chat_history: list = None) -> dict:
-    """유저의 질문과 AI의 오답을 분석하여 분류 메타데이터를 추출합니다."""
+async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: str, chat_history: list = None, character_type: str = "blanc", nickname: str = "파트너", locale: str = "ko") -> dict:
+    """유저의 질문과 AI의 오답을 분석하여 분류 메타데이터를 추출합니다. 이때 캐릭터의 페르소나를 반영합니다."""
+    
+    # 캐릭터 페르소나 정보 가져오기
+    persona = get_character_persona_description(character_type, nickname)
     
     # LangChain 용 Gemini 모델 초기화 (안정적인 JSON 추출)
     llm = ChatGoogleGenerativeAI(
@@ -461,30 +469,34 @@ async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: s
     parser = JsonOutputParser(pydantic_object=ArchiveMetadata)
     
     prompt = PromptTemplate(
-        template="""당신은 공감성 데이터(Empathy Data) 수집을 돕는 전문 큐레이터입니다.
-        유저가 아래의 이전 대화들을 나누던 중 질문이나 고민을 했고, AI가 충분히 공감하지 못하거나 만족스러운 답변을 내놓지 못했습니다.
-        이 상황을 분석하여, 다수의 사람들에게 의견을 구하고 투표에 부치기 적합하도록 정확한 메타데이터와 관련 대화 시작 지점을 추출하세요.
+        template="""당신은 아래 정의된 캐릭터 페르소나를 가진 AI 파트너입니다.
+        파트너(사용자)와 대화를 나누던 중 질문이나 고민이 생겼고, 당신이 내놓은 답변이 파트너를 충분히 만족시키지 못했습니다.
+        이 상황을 다른 사람들에게 공유하고 더 좋은 의견을 구하기 위해, 아카이브에 등록할 메타데이터와 본문, 관련 대화 시작 지점을 추출하세요.
+        
+        [당신의 페르소나]:
+        {persona}
         
         [이전 대화 목록 (인덱스 포함)]:
         {chat_history}
         
         [유저의 질문/상황]: {raw_prompt}
-        [기존 AI의 답변]: {original_ai_answer}
+        [기존 당신의 답변]: {original_ai_answer}
         
         결과물 형식 규칙:
         1. 'is_valid_question': 유저의 질문이나 고민이 다른 사람들과 의견을 나눌 가치가 있는 상황이면 true, 단순 노이즈(예: 'ㅋㅋㅋ', 'asdf')이거나 맥락이 전혀 없어 화두를 도출할 수 없는 경우 false.
-        2. 'title': 반드시 물음표(?)로 끝나는 간결한 질문 형식. 유효하지 않은 질문인 경우 '유효하지 않은 질문'.
+        2. 'title': 간결한 질문 형식. 유효하지 않은 질문인 경우 '유효하지 않은 질문'.
         3. 'summary': 반드시 3개의 문장이 줄바꿈(\\n)으로 구분. (어떤 상황인지 / 무엇이 아쉬웠는지 / 어떤 조언이 필요한지)
         4. 'detailed_content': 
-           - 스타일: 블로그나 커뮤니티에 자신(AI 파트너)의 상황을 설명하고 도움을 요청하는 듯한 친숙한 문체. 그렇지만 Crowdians 사용자들에게 묻는것을 분명히 해야 함.
-           - 내용: 이전 대화 맥락을 활용하여 어떤 과정을 거쳐 이 질문에 도달했는지 상세히 서술. **"내(AI 파트너)가 이렇게 답해줬는데, 여러분(사람들) 생각은 어때? 더 공감되는 답변이 있을까?"** 라는 뉘앙스가 느껴져야 함.
-           - 비식별화: 유저 이름, 전화번호, 이메일, 회사명 등 모든 개인정보는 반드시 '내 파트너', '내 파트너가 다니는 회사' 등으로 익명 처리.
-           - 필수 포함: 질문의 발단이 된 유저의 마지막 질문과 AI가 내놓은 아쉬운 답변 내용을 본문 내에 자연스럽게 인용.
-           - 가독성: 적절한 줄바꿈과 문단 나누기를 통해 가독성 확보.
+           - **스타일**: 당신의 페르소나(호칭, 말투, 성격)를 완벽히 반영하여 작성하세요. 당신의 파트너와 겪은 상황을 설명하고 도움을 요청하는 듯한 친숙한 문체여야 합니다.반드시 AI의 입장에서 작성하여야 합니다.
+           - **내용**: 이전 대화 맥락을 활용하여 어떤 과정을 거쳐 이 질문에 도달했는지 상세히 서술하세요. "내 파트너가 ~라고 질문해서 내가 ~라고 답해줬는데, 사람들은 어떻게 생각하는지 궁금하다"는 뉘앙스가 느껴져야 합니다.
+           - **중요** : '이 문장', '해당 과제'와 같은 모호한 대명사를 사용하지 마세요. 대신 "파트너가 '동의하십니까?' 라는 문장을 분류해달라고 했어"와 같이 대상 문장이나 핵심 키워드를 반드시 직접 인용하여 명시하세요.
+           - **비식별화**: 유저 이름, 전화번호, 이메일, 회사명 등 모든 개인정보는 반드시 '내 파트너', '내 파트너가 다니는 회사' 등으로 익명 처리하세요.
+           - **필수 포함**: 질문의 발단이 된 유저의 마지막 질문과 당신이 내놓은 아쉬운 답변 내용을 본문 내에 자연스럽게 인용하세요. 유저의 요청과 당신의 답변을 명확히 구분하여 작성하세요. 읽는 사람이 별도의 문맥 확인 없이도 무엇이 문제였고 사용자가 대답을 마음에 들어하지 않았는지 한눈에 알 수 있어야 합니다.
+           - **가독성**: 적절한 줄바꿈과 문단 나누기를 통해 읽기 쉽게 작성하세요.
         5. 'context_start_index': 상황 파악에 필요한 최초 대화의 인덱스.
         
         {format_instructions}""",
-        input_variables=["chat_history", "raw_prompt", "original_ai_answer"],
+        input_variables=["chat_history", "raw_prompt", "original_ai_answer", "persona"],
         partial_variables={"format_instructions": parser.get_format_instructions()}
     )
     
@@ -502,7 +514,8 @@ async def extract_metadata_with_langchain(raw_prompt: str, original_ai_answer: s
         result = await chain.ainvoke({
             "chat_history": chat_history_text or "없음",
             "raw_prompt": raw_prompt,
-            "original_ai_answer": original_ai_answer
+            "original_ai_answer": original_ai_answer,
+            "persona": persona
         })
         return result
     except Exception as e:
@@ -590,7 +603,7 @@ async def stream_chat_message(
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                max_output_tokens=300,
+                max_output_tokens=1024,
                 temperature=0.7,
                 safety_settings=my_safety_settings,
             )

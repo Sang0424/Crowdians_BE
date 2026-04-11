@@ -56,9 +56,15 @@ class ArchivePostResponse(BaseModel):
     summary: Optional[str] = None # LLM 3줄 요약
 
 
+class ConversationSnapshot(BaseModel):
+    role: str
+    content: str
+
+
 class ArchivePostDetailResponse(ArchivePostResponse):
     """상세 조회 시 하위 답변들을 포함"""
     answers: list[ArchiveAnswerResponse]
+    chatContext: Optional[list[ConversationSnapshot]] = []
 
 
 class ArchivePostRequest(BaseModel):
