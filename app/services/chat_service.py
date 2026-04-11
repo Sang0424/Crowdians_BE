@@ -588,8 +588,12 @@ async def stream_chat_message(
 
         conv = await get_or_create_conversation(user.uid)
         system_instruction = get_system_prompt_for_character(user.character.type, user.nickname, locale)
+        
+        # ── [OPTIMIZATION] 최근 10개의 대화만 컨텍스트로 주입 (속도 및 비용 최적화) ──
+        recent_messages = conv.messages[-10:] if len(conv.messages) > 10 else conv.messages
+        
         contents = []
-        for msg in conv.messages:
+        for msg in recent_messages:
             contents.append(types.Content(role=msg.role, parts=[types.Part.from_text(text=msg.content)]))
         contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message_content)]))
     else:
@@ -641,7 +645,7 @@ async def stream_chat_message(
         yield {"type": "error", "data": {"code": code, "message": msg}}
         return
 
-    # 2. 사후 처리 (인증 유저만)
+    # 2. 사후 처리
     exp_gained = 0
     gold_gained = 0
     now = datetime.now(timezone.utc)
@@ -673,6 +677,12 @@ async def stream_chat_message(
             
         user.stats.process_level_up(max_stamina=user.max_stamina)
         await user.save()
+    else:
+        # 게스트 유저 보상 계산 (DB 저장 안 함, 프론트엔드 전달용)
+        exp_gained = 2
+        import random
+        if random.random() < 0.03:
+            gold_gained = random.randint(1, 3)
 
     # 3. 완료 이벤트 전송
     yield {

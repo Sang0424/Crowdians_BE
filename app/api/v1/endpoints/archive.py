@@ -1,6 +1,6 @@
 # app/api/v1/endpoints/archive.py
 
-from fastapi import APIRouter, Query, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Query, HTTPException, status, BackgroundTasks, Body
 
 from app.core.security import CurrentUser, CurrentUserOptional
 from app.models.user import User
@@ -51,9 +51,10 @@ async def get_archives(
     page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
     size: int = Query(10, ge=1, le=50, description="페이지당 아이템 수"),
     locale: str = Query("ko", description="언어 설정"),
+    q: str | None = Query(None, description="검색 키워드"),
 ):
     skip = (page - 1) * size
-    posts, total_count = await get_archive_list(sort, skip=skip, limit=size, locale=locale)
+    posts, total_count = await get_archive_list(sort, skip=skip, limit=size, locale=locale, keyword=q)
     
     author_ids = list(set([p.author_id for p in posts]))
     # post_ids = [str(p.id) for p in posts]
@@ -168,6 +169,39 @@ async def create_post(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
+
+
+# ══════════════════════════════════════
+# POST /archive/sync-guest-answers — 게스트 답변 동기화
+# ══════════════════════════════════════
+
+@router.post(
+    "/archive/sync-guest-answers",
+    summary="게스트 시절 작성한 답변 동기화",
+)
+async def sync_guest_archive_answers(
+    current_user: CurrentUser,
+    data: dict = Body(...),
+):
+    """
+    Zustand에 저장되어 있던 게스트 답변 목록을 서버로 전송하여 실제 DB에 생성합니다.
+    data = {"answers": [{"itemId": "...", "content": "..."}]}
+    """
+    from app.services.archive_service import submit_archive_answer
+    answers = data.get("answers", [])
+    synced_count = 0
+    
+    for item in answers:
+        try:
+            post_id = item.get("itemId")
+            content = item.get("content")
+            if post_id and content:
+                await submit_archive_answer(current_user, post_id, content)
+                synced_count += 1
+        except Exception as e:
+            print(f"Failed to sync guest archive answer for post {item.get('itemId')}: {e}")
+            
+    return {"success": True, "synced_count": synced_count}
 
 
 # ══════════════════════════════════════

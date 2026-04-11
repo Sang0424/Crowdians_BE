@@ -70,30 +70,26 @@ async def get_daily_cards(user: User | None, ticket_index: int, locale: str = "k
         )
     
     
-    # ── 1단계: Vote 타입 우선 확보 (최대한 3장) ──
-    # POOL_SIZE만큼 후보군을 가져와 그 안에서 무작위로 선택합니다.
+    # ── [REVISED] 문제 출제 비율 조정 (Vote 3장 : Teach 2장) ──
+    v_needed = 3
+    t_needed = 2
+
+    # 1. Vote 타입 확보 (최대 3장)
     vote_candidates = await KnowledgeCard.find(
         *query_filters, KnowledgeCard.type == "vote"
     ).sort([("priority", -1), ("created_at", -1)]).limit(POOL_SIZE).to_list()
-    
-    vote_cards = random.sample(vote_candidates, min(3, len(vote_candidates)))
-    print(f"[Academy] Obtained Vote Cards: {len(vote_cards)} (from {len(vote_candidates)} candidates)")
-    
-    # ── 2단계: 부족한 만큼 Teach 타입으로 채우기 (최대 5장 확보를 목표) ──
-    needed_teach = 5 - len(vote_cards)
-    if needed_teach > 0:
-        teach_candidates = await KnowledgeCard.find(
-            *query_filters, KnowledgeCard.type == "teach"
-        ).sort([("priority", -1), ("created_at", -1)]).limit(POOL_SIZE).to_list()
-        
-        teach_cards = random.sample(teach_candidates, min(needed_teach, len(teach_candidates)))
-        print(f"[Academy] Obtained Teach Cards: {len(teach_cards)} (from {len(teach_candidates)} candidates)")
-    else:
-        teach_cards = []
-    
-    total_cards = vote_cards + teach_cards
-    
-    # ── 3단계: 그래도 5장이 안 되면 나머지 타입(quiz 등)에서 추가 확보 ──
+    v_cards = random.sample(vote_candidates, min(v_needed, len(vote_candidates)))
+
+    # 2. Teach 타입 확보 (최대 2장 + 부족한 Vote 채우기)
+    t_limit = t_needed + (v_needed - len(v_cards))
+    teach_candidates = await KnowledgeCard.find(
+        *query_filters, KnowledgeCard.type == "teach"
+    ).sort([("priority", -1), ("created_at", -1)]).limit(POOL_SIZE).to_list()
+    t_cards = random.sample(teach_candidates, min(t_limit, len(teach_candidates)))
+
+    total_cards = v_cards + t_cards
+
+    # 3. 그래도 5장이 안 되면 다시 다른 타입 후보군에서 보충
     if len(total_cards) < 5:
         existing_ids = [c.id for c in total_cards]
         needed_extra = 5 - len(total_cards)
@@ -105,9 +101,8 @@ async def get_daily_cards(user: User | None, ticket_index: int, locale: str = "k
         
         extra_cards = random.sample(extra_candidates, min(needed_extra, len(extra_candidates)))
         total_cards += extra_cards
-        print(f"[Academy] Obtained Extra Cards: {len(extra_cards)}")
     
-    print(f"[Academy] Total Final Cards: {len(total_cards)}")
+    print(f"[Academy] Cards Distribution - Vote: {len(v_cards)}, Teach: {len(t_cards)}, Total: {len(total_cards)}")
     if not total_cards:
         # Check if cards exist in DB without the is_migrated filter
         total_in_db = await KnowledgeCard.find(KnowledgeCard.locale == locale).count()
@@ -377,6 +372,10 @@ async def submit_ab_vote(user: User | None, card_id: str, chosen_answer: str, un
     card.choice_wins[chosen_answer] += voting_weight
     card.total_matches += 1
 
+    # Beanie가 딕셔너리 내부 변경사항을 감지하도록 재할당
+    card.choice_matches = dict(card.choice_matches)
+    card.choice_wins = dict(card.choice_wins)
+
     # 6. 보상 지급 (기존 보상 로직 통합)
     exp_gained = 10
     gold_gained = 5
@@ -384,6 +383,22 @@ async def submit_ab_vote(user: User | None, card_id: str, chosen_answer: str, un
     int_gained = 1
     
     if user:
+        # [Trust Mapping] 만약 선택지에 연결된 답변ID가 있다면 신뢰도 투표 동기화
+        if hasattr(card, "choice_answer_ids") and card.choice_answer_ids:
+            answer_id = card.choice_answer_ids.get(str(chosen_answer))
+            if answer_id:
+                try:
+                    from app.services.archive_service import toggle_trust_vote
+                    # 이미 투표했으면 중복 투표 방지를 위해 취소 후 재투표가 아닌, 
+                    # 한 번도 안 한 상태일 때만 투표하도록 처리 (toggle_trust_vote 내부 로직 참고)
+                    from app.models.archive import ArchiveAnswer
+                    from bson import ObjectId
+                    target_ans = await ArchiveAnswer.get(ObjectId(answer_id))
+                    if target_ans and user.uid not in target_ans.voted_user_ids:
+                        await toggle_trust_vote(user, answer_id)
+                except Exception as e:
+                    print(f"Failed to auto-toggle trust vote: {e}")
+
         user.stats.exp += exp_gained
         user.stats.gold += gold_gained
         user.stats.trust += trust_gained
@@ -506,14 +521,31 @@ async def sync_guest_academy_data(user: User, items: list) -> dict:
         try:
             card = await KnowledgeCard.get(ObjectId(item.card_id))
             if card and card.linked_post_id:
-                from app.services.archive_service import submit_archive_answer
-                await submit_archive_answer(
-                    user, 
-                    card.linked_post_id, 
-                    str(item.answer or item.chosen_answer),
-                )
+                # ── 카드 타입별 처리 ──
+                if card.type == "vote":
+                    # [VOTE TYPE] 선택지에 연결된 답변ID가 있다면 신뢰도 투표 동기화
+                    if hasattr(card, "choice_answer_ids") and card.choice_answer_ids:
+                        chosen_ans_text = str(item.answer or item.chosen_answer)
+                        answer_id = card.choice_answer_ids.get(chosen_ans_text)
+                        if answer_id:
+                            try:
+                                from app.services.archive_service import toggle_trust_vote
+                                from app.models.archive import ArchiveAnswer
+                                target_ans = await ArchiveAnswer.get(ObjectId(answer_id))
+                                if target_ans and user.uid not in target_ans.voted_user_ids:
+                                    await toggle_trust_vote(user, answer_id)
+                            except Exception as e:
+                                print(f"Failed to auto-toggle trust vote in sync: {e}")
+                else:
+                    # [TEACH/QUIZ TYPE] 답변 생성
+                    from app.services.archive_service import submit_archive_answer
+                    await submit_archive_answer(
+                        user, 
+                        card.linked_post_id, 
+                        str(item.answer or item.chosen_answer),
+                    )
                 
-                # A/B 투표인 경우 통계도 업데이트
+                # A/B 투표 통계 업데이트 (모든 Vote 타입)
                 if card.type == "vote" and item.chosen_answer:
                     voting_weight = max(1, user.stats.trust // 500)
                     if not card.choice_matches: card.choice_matches = {}
@@ -528,6 +560,11 @@ async def sync_guest_academy_data(user: User, items: list) -> dict:
                     card.choice_wins[chosen] = card.choice_wins.get(chosen, 0) + voting_weight
                     card.total_matches += 1
                     card.trust_count += voting_weight
+                    
+                    # Beanie 감지용 재할당
+                    card.choice_matches = dict(card.choice_matches)
+                    card.choice_wins = dict(card.choice_wins)
+                    
                     await card.save()
                 elif card.type in ["teach", "quiz"]:
                     card.trust_count += max(1, user.stats.trust // 500)

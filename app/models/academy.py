@@ -24,6 +24,7 @@ class KnowledgeCard(Document):
     total_matches: int = 0          # 총 A/B 매치 진행 횟수
     choice_wins: dict[str, int] = Field(default_factory=dict, description="답변별 가중 승리 횟수")
     choice_matches: dict[str, int] = Field(default_factory=dict, description="답변별 노출(매치) 횟수")
+    choice_answer_ids: dict[str, str] = Field(default_factory=dict, description="선택지 텍스트 -> ArchiveAnswer ID 매핑 (신뢰도 투표 연동용)")
     
     # RLHF나 특정 출처가 있다면 기록
     source_message_id: str | None = None

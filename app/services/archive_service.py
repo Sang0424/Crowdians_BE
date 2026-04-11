@@ -148,7 +148,13 @@ async def create_archive_post(
     return str(post.id)
 
 
-async def get_archive_list(sort: str, skip: int = 0, limit: int = 10, locale: str = "ko") -> tuple[list[ArchivePost], int]:
+async def get_archive_list(
+    sort: str, 
+    skip: int = 0, 
+    limit: int = 10, 
+    locale: str = "ko",
+    keyword: str | None = None
+) -> tuple[list[ArchivePost], int]:
     """질문 목록을 페이지네이션으로 조회합니다. (posts, total_count) 반환."""
     # sort param (latest | popular | needed)
     # SOS 게시글 (is_sos = True) 최상단 노출
@@ -159,7 +165,23 @@ async def get_archive_list(sort: str, skip: int = 0, limit: int = 10, locale: st
     else:
         sort_query = [("is_sos", -1), ("createdAt", -1)]
 
-    query = archive_repo.model.find(archive_repo.model.locale == locale)
+    # 기본 필터: 언어 설정
+    filters = [archive_repo.model.locale == locale]
+    
+    # 키워드 검색 추가
+    if keyword:
+        import re
+        regex = re.compile(keyword, re.IGNORECASE)
+        # Beanie/MongoDB $or 쿼리
+        filters.append({
+            "$or": [
+                {"title": regex},
+                {"content": regex},
+                {"category": regex}
+            ]
+        })
+
+    query = archive_repo.model.find(*filters)
     total_count = await query.count()
     posts = await query.sort(sort_query).skip(skip).limit(limit).to_list()
     return posts, total_count
@@ -737,6 +759,7 @@ async def _generate_vote_card_background(user: User, post_id: str, answer_id: st
             return
 
         choices = []
+        answer_id_map = {}
         # 현재 이 답변을 제외한 기존 답변들을 가져옵니다.
         existing_answers = await ArchiveAnswer.find(
             ArchiveAnswer.post_id == post_id,
@@ -744,13 +767,14 @@ async def _generate_vote_card_background(user: User, post_id: str, answer_id: st
         ).to_list()
         
         if not existing_answers:
-            # 첫 번째 유저 답변인 경우: LLM이 작성한 요약(summary)과 비교
-            if post.summary:
-                choices = [post.summary, answer.content]
-        else:
-            # 두 번째 이상의 답변인 경우: 기존 답변 중 하나를 랜덤으로 골라 비교
-            other_ans = random.choice(existing_answers)
-            choices = [other_ans.content, answer.content]
+            # 더 이상 LLM 요약(summary)과 유저 답변을 비교하지 않고, 최소 2개의 답변이 모였을 때만 Vote 생성
+            return
+
+        # 두 번째 이상의 답변인 경우: 기존 답변 중 하나를 랜덤으로 골라 비교
+        other_ans = random.choice(existing_answers)
+        choices = [other_ans.content, answer.content]
+        answer_id_map[other_ans.content] = str(other_ans.id)
+        answer_id_map[answer.content] = str(answer.id)
             
         if len(choices) == 2:
             # 보기가 2개 준비되었다면 Vote 카드 생성
@@ -778,7 +802,8 @@ async def _generate_vote_card_background(user: User, post_id: str, answer_id: st
                 honeypot_answer=honeypot_answer,
                 priority=50 if post.is_sos else 0,
                 linked_post_id=post_id,
-                source_message_id=str(answer.id)
+                source_message_id=str(answer.id),
+                choice_answer_ids=answer_id_map
             )
             await vote_card.insert()
             print(f"[Archive] Background KnowledgeCard (vote) created for post: {post_id}")
