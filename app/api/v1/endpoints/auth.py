@@ -182,7 +182,6 @@ async def update_nickname(
         )
 
     current_user.nickname = request.nickname
-    current_user.stats.is_onboarding_done = True
     await current_user.save()
 
     return NicknameResponse(

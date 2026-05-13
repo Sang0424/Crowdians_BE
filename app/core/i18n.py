@@ -22,7 +22,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "error.subscription.not_found": "구독 정보를 찾을 수 없습니다.",
         "error.limit_exceeded.sos": "오늘의 SOS 요청 횟수를 모두 사용하셨습니다. (일일 3회)",
         "error.limit_exceeded.commission": "오늘의 직접 의뢰 횟수를 모두 사용하셨습니다. (일일 1회)",
-        "error.auth.unauthorized": "인증에 실패했습니다. 다시 로그인해주세요."
+        "error.auth.unauthorized": "인증에 실패했습니다. 다시 로그인해주세요.",
+        "error.resource.insufficient_gold": "골드가 부족합니다. (필요: 30G)"
     },
     "en": {
         "archive.rejection.title": "📚 Archive Registration Postponed",
@@ -42,7 +43,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "error.subscription.not_found": "Subscription information not found.",
         "error.limit_exceeded.sos": "You have reached your daily SOS request limit. (3 per day)",
         "error.limit_exceeded.commission": "You have reached your daily commission limit. (1 per day)",
-        "error.auth.unauthorized": "Authentication failed. Please login again."
+        "error.auth.unauthorized": "Authentication failed. Please login again.",
+        "error.resource.insufficient_gold": "Insufficient gold. (Required: 30G)"
     },
     "ja": {
         "archive.rejection.title": "📚 知識図書館への登録保留のご案内",

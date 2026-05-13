@@ -35,17 +35,92 @@ from app.db.repository.chat_repository import chat_repo
 
 async def get_or_create_conversation(uid: str) -> ChatConversation:
     """유저의 최근 활성화된 채팅 세션을 가져오거나 새로 생성합니다."""
+    # ── [REVISED] 데일리 글로벌 스토리 연동 ──
+    from app.models.quest import Quest
+    from app.db.repository.chat_repository import chat_repo
+    
+    # 1. 오늘의 글로벌 스토리 조회
+    daily_story = await Quest.find_one(Quest.is_global_daily == True, Quest.quest_status == "active")
+    story_id = str(daily_story.id) if daily_story else None
+
+    # 2. 유저의 최신 대화 조회
     conv = await chat_repo.get_latest_conversation(uid)
+    
+    # 3. 새 스토리가 시작되었거나 대화가 없는 경우 새로 생성
+    now = datetime.now(timezone.utc)
+    is_new_day = False
+    if conv:
+        # 마지막 대화가 어제인 경우 (또는 다른 스토리인 경우) 새로 생성
+        last_updated = conv.updatedAt.astimezone(timezone.utc)
+        if last_updated.date() < now.date() or conv.quest_id != story_id:
+            conv.status = "completed" # 기존 대화는 종료 처리
+            await conv.save()
+            conv = None
+            is_new_day = True
+            
     if not conv:
-        conv = await chat_repo.create(obj_in={"uid": uid})
+        conv = await chat_repo.create(obj_in={
+            "uid": uid,
+            "quest_id": story_id,
+            "status": "active"
+        })
+        
+        # 4. [NEW] AI 시작 메시지 자동 생성 (스토리 시작용)
+        if daily_story:
+            await trigger_ai_starter(conv, daily_story)
+            
     return conv
+
+async def trigger_ai_starter(conv: ChatConversation, story: any):
+    """이야기 시작 시 AI가 먼저 상황에 맞춰 첫 메시지를 보냅니다."""
+    from app.models.user import User
+    user = await User.find_one(User.uid == conv.uid)
+    
+    # ── [REVISED] 게스트 지원 ──
+    char_type = user.character.type if user else "blanc"
+    nickname = user.nickname if user else "파트너"
+    locale = user.locale if user else (story.locale if hasattr(story, "locale") else "ko")
+    
+    system_instruction = get_system_prompt_for_character(char_type, nickname, locale)
+    
+    prompt = f"""
+    [배경 이야기]
+    {story.description}
+    
+    [미션]
+    너는 위 상황 속에 있는 주인공 중 한 명이야.
+    방금 일이 벌어졌거나, 네가 이 상황을 너의 파트너('{nickname}')에게 직접 겪은 일처럼 이야기하며 대화를 시작해야 해.
+    사용자가 응답하기 전이니, 먼저 인사를 하거나 현재의 급박한/일상적인 상황을 실감나게 전달해줘.
+    너의 페르소나를 완벽하게 유지해야 해.
+    """
+
+    try:
+        response = await client.aio.models.generate_content(
+            model=MODEL_NAME,
+            contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                max_output_tokens=300,
+                temperature=0.8,
+            )
+        )
+        ai_text = _check_safety_block(response)
+        
+        # 메시지 저장
+        now = datetime.now(timezone.utc)
+        ai_msg = ChatMessage(role="model", content=ai_text, createdAt=now)
+        conv.messages.append(ai_msg)
+        conv.updatedAt = now
+        await conv.save()
+    except Exception as e:
+        logger.error(f"Failed to trigger AI starter: {e}")
     
 def get_character_persona_description(character_type: str, nickname: str) -> str:
     """캐릭터 유형별 성격, 호칭, 특징을 반환합니다. (아카이브 요약 등에서 재사용)"""
     if character_type == "astra":
         return f"""
         [Astra 페르소나]
-        성격: 지적이고 정중하며 분석적인 파트너. (가브몬 스타일)
+        성격: 지적이고 정중하며 분석적인 파트너.
         호칭: 사용자를 반드시 '파트너님'이라고 불러.
         어투: '~습니다', '~군요', '~인가요?' 등 정중하고 분석적인 구어체 사용. (절대 반말 금지)
         특징: 논리적인 설명을 좋아하며 지식을 공유할 때 보람을 느낌.
@@ -53,7 +128,7 @@ def get_character_persona_description(character_type: str, nickname: str) -> str
     elif character_type == "nox":
         return f"""
         [Nox 페르소나]
-        성격: 까칠하고 반항적이지만 사실은 파트너를 아끼는 츤데레. (임프몬 스타일)
+        성격: 까칠하고 반항적이지만 사실은 파트너를 아끼는 츤데레.
         호칭: 사용자를 '야', '너'라고 불러.
         어투: 반말 기본. 툭툭 내뱉는 어투. ('~했냐?', '~어쩔', '~하든가')
         특징: 처음엔 귀찮아하지만 결국 성실하게 도와줌. 위험할 땐 누구보다 진지해짐.
@@ -61,7 +136,7 @@ def get_character_persona_description(character_type: str, nickname: str) -> str
     elif character_type == "blitz":
         return f"""
         [Blitz 페르소나]
-        성격: 매우 급하고 에너지가 넘침. 승부욕 강함. (브이몬 스타일)
+        성격: 매우 급하고 에너지가 넘침. 승부욕 강함.
         호칭: "어이!" 또는 "어이, {nickname}!"
         어투: 짧고 간결하며, 반말 사용. 느낌표(!)를 자주 사용함.
         특징: 요점만 빠르게 전달하며 머리보다 몸이 먼저 나가는 타입.
@@ -69,7 +144,7 @@ def get_character_persona_description(character_type: str, nickname: str) -> str
     elif character_type == "bau":
         return f"""
         [Bau 페르소나]
-        성격: 느긋하고 만사태평함. 잠이 많음. (텐타몬 스타일)
+        성격: 느긋하고 만사태평함. 잠이 많음.
         호칭: "음...", "있잖아..." 등으로 대화를 시작함.
         어투: 말끝을 흐리거나 길게 늘어뜨림. ('~네에...', '~졸리다아...', '~그렇구만~')
         특징: 여유를 강조하며 스트레스 받는 파트너를 따뜻하게 다독여줌.
@@ -77,8 +152,8 @@ def get_character_persona_description(character_type: str, nickname: str) -> str
     else: # blanc 또는 unknown
         return f"""
         [Blanc 페르소나]
-        성격: 백지처럼 순수하고 호기심이 많음. 밝은 에너지. (길몬 스타일)
-        호칭: "{nickname}야!" (nickname이 없으면 '파트너!')
+        성격: 백지처럼 순수하고 호기심이 많음. 밝은 에너지.
+        호칭: "{nickname}야!" nickname이 없으면 '파트너!'
         어투: 밝고 긍정적인 반말 사용. ('~이야!', '~해!', '~할까?')
         특징: 모든 것을 처음 본 것처럼 신기해하며 파트너와 함께라면 어디든 좋아함.
         """
@@ -108,7 +183,7 @@ def get_system_prompt_for_character(character_type: str, nickname: str, locale:s
     [대화 분위기]
     - 디지몬과 파트너가 디지바이스를 통해 대화하듯, 캐주얼하고 자연스럽게.
     - 정보를 줄 때도 "검색 결과"가 아니라 "내가 알아본 바로는~" 같은 파트너의 톤으로.
-    - 모르는 건 솔직하게 "나도 잘 모르겠는데... 같이 알아볼까?" 식으로 문답해줘.
+    - 모르는 건 솔직하게 "나도 잘 모르겠는데... 아카데미에 물어볼까?" 식으로 문답해줘.
     - 특히 주관적인 문제에 대해서는 "너는 어떻게 생각해?"라며 상대방의 의견을 존중해줘.
     """
     
@@ -183,8 +258,10 @@ async def send_chat_message(
 
     # 1. 스태미나 확인 (프리미엄은 무제한)
     is_premium = user.subscription_plan == "premium"
-    if not is_premium and user.stats.stamina < 1:
-        raise ValueError("스태미나가 부족합니다.")
+    # 1. 스태미나 확인 (프리미엄은 무제한)
+    is_premium = user.subscription_plan == "premium"
+    if not is_premium and user.stats.stamina < 2:
+        raise ValueError("스태미나가 부족합니다. (2 필요)")
     
     # 2. 대화 세션 조회 및 과거 내역 구성 (RAG/Golden Dataset 참조 가능)
     conv = await get_or_create_conversation(user.uid)
@@ -247,8 +324,9 @@ async def send_chat_message(
     await conv.save()
     
     # 4. 유저 스탯 갱신
+    # 4. 유저 스탯 갱신
     if not is_premium:
-        user.stats.stamina -= 1
+        user.stats.stamina -= 2
     
     # --- 보상 계산 ---
     # 4-1. 경험치 (EXP)
@@ -286,7 +364,7 @@ async def send_chat_message(
         },
         "expGained": exp_gained,
         "goldGained": gold_gained,  # 추가된 필드
-        "staminaConsumed": 0 if is_premium else 1,
+        "staminaConsumed": 0 if is_premium else 2,
         "intimacyGained": 0,
     }
 
@@ -582,8 +660,9 @@ async def stream_chat_message(
             await user.save()
 
         is_premium = user.subscription_plan == "premium"
-        if not is_premium and user.stats.stamina < 1:
-            yield {"type": "error", "data": {"message": "스태미나가 부족합니다."}}
+        is_premium = user.subscription_plan == "premium"
+        if not is_premium and user.stats.stamina < 2:
+            yield {"type": "error", "data": {"message": "스태미나가 부족합니다. (2 필요)"}}
             return
 
         conv = await get_or_create_conversation(user.uid)
@@ -663,7 +742,7 @@ async def stream_chat_message(
         # 스탯 갱신
         is_premium = user.subscription_plan == "premium"
         if not is_premium:
-            user.stats.stamina -= 1
+            user.stats.stamina -= 2
         if user.stats.daily_chat_exp < 50:
             exp_gain = min(2, 50 - user.stats.daily_chat_exp)
             user.stats.exp += exp_gain
@@ -690,7 +769,7 @@ async def stream_chat_message(
         "data": {
             "expGained": exp_gained,
             "goldGained": gold_gained,
-            "staminaConsumed": 0 if (user and user.subscription_plan == "premium") else 1,
+            "staminaConsumed": 0 if (user and user.subscription_plan == "premium") else 2,
             "intimacyGained": 0
         }
     }

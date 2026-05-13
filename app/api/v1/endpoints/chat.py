@@ -10,13 +10,15 @@ from app.models.chat import ChatConversation
 from app.models.user import User
 from app.schemas.chat import (
     ChatMessageRequest,
+    ChatMessageResponse,
     ChatSendResponse,
     ChatHistoryResponse,
-    ChatMessageResponse,
     ChatUnlikeRequest,
     ChatUnlikeResponse,
     ChatSosRequest,
     ChatSosResponse,
+    CompleteStoryRequest,
+    CompleteStoryResponse,
 )
 from app.services.chat_service import (
     send_chat_message,
@@ -127,11 +129,10 @@ async def get_chat_history(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=100),
 ):
-    if current_user is None:
-        return ChatHistoryResponse(conversationId="guest", messages=[])
-        
+    uid = current_user.uid if current_user else "local_user"
+    
     # 여기서는 간단히 최신 세션 전체 메시지를 반환합니다.
-    conv = await get_or_create_conversation(current_user.uid)
+    conv = await get_or_create_conversation(uid)
     
     # Pagination
     start = max(0, len(conv.messages) - (page * limit))
@@ -295,14 +296,36 @@ async def request_sos(
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
 ):
-    # 1. 전체 대화 내역 확보
+    # 0. 검증 (골드 및 횟수 제한)
+    SOS_COST = 30
+    SOS_LIMIT = 3
+    
+    if current_user.stats.gold < SOS_COST:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=get_text("error.resource.insufficient_gold", request.locale)
+        )
+        
+    if current_user.subscription_plan != "premium":
+        if current_user.stats.daily_sos_count >= SOS_LIMIT:
+             raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=get_text("error.limit_exceeded.sos", request.locale)
+            )
+
+    # 1. 골드 차감 및 횟수 증가
+    current_user.stats.gold -= SOS_COST
+    current_user.stats.daily_sos_count += 1
+    await current_user.save()
+
+    # 2. 전체 대화 내역 확보
     conv = await get_or_create_conversation(current_user.uid)
     chat_history_raw = [
         {"role": m.role, "content": m.content} 
         for m in conv.messages
     ]
     
-    # 2. 백그라운드 태스크 등록
+    # 3. 백그라운드 태스크 등록
     background_tasks.add_task(
         process_archive_task_background,
         user=current_user,
@@ -315,6 +338,78 @@ async def request_sos(
     
     return ChatSosResponse(
         success=True,
-        goldConsumed=0,
+        goldConsumed=SOS_COST,
         message=get_text("chat.sos.success", request.locale),
+    )
+
+
+# ══════════════════════════════════════
+# POST /chat/complete-story — 스토리 종료 및 아카이빙
+# ══════════════════════════════════════
+
+@router.post(
+    "/chat/complete-story",
+    response_model=CompleteStoryResponse,
+    summary="스토리 종료 및 하이라이트 아카이빙",
+    description="진행 중인 스토리를 종료하고 선택한 아쉬운 답변들을 아카데미로 보냅니다.",
+)
+async def complete_story(
+    request: CompleteStoryRequest,
+    current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
+):
+    # 1. 활성화된 대화 조회
+    conv = await get_or_create_conversation(current_user.uid)
+    if conv.status == "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이미 종료된 스토리입니다."
+        )
+
+    # 2. 대화 종료 처리
+    conv.status = "completed"
+    await conv.save()
+
+    # 3. 선택된 하이라이트들에 대해 아카이브 태스크 등록
+    archive_count = 0
+    for idx in request.highlightIndexes:
+        if 0 < idx < len(conv.messages):
+            target_ai_msg = conv.messages[idx]
+            target_user_msg = conv.messages[idx - 1]
+            
+            # 메시지 객체들에 하이라이트 표시 (데이터베이스 기록용)
+            # ※ 모델 객체가 임베디드라 개별 저장은 conv.save()로 처리됨
+            
+            # 백그라운드 태스크: 각 하이라이트별로 아카이브 포스트 생성
+            chat_history_raw = [
+                {
+                    "role": m.role, 
+                    "content": m.content,
+                    "msg_id": f"msg_{i}", # 임시 ID
+                    "is_highlight": (i == idx)
+                } 
+                for i, m in enumerate(conv.messages[:idx+1])
+            ]
+            
+            background_tasks.add_task(
+                process_archive_task_background,
+                user=current_user,
+                raw_prompt=target_user_msg.content,
+                original_ai_answer=target_ai_msg.content,
+                chat_history=chat_history_raw,
+                is_sos=False,
+                locale=request.locale
+            )
+            archive_count += 1
+
+    msg = f"{archive_count}개의 답변을 아카데미에 전송하고 스토리를 종료했습니다."
+    if request.locale == "ja":
+        msg = f"{archive_count}個の回答をアカデミーに転送し、ストーリーを終了しました。"
+    elif request.locale == "en":
+        msg = f"Sent {archive_count} responses to the Academy and ended the story."
+
+    return CompleteStoryResponse(
+        success=True,
+        archiveCount=archive_count,
+        message=msg
     )

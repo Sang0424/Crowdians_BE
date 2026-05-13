@@ -16,6 +16,8 @@ class ChatMessage(BaseModel):
 class ChatConversation(Document):
     """유저와 AI(Crowdy) 간의 대화 세션을 저장하는 Document"""
     uid: str                        # User의 uid
+    quest_id: str | None = None      # 진행 중인 퀘스트/스토리 ID
+    status: str = "active"          # "active" | "completed" | "archived"
     messages: list[ChatMessage] = Field(default_factory=list)
     createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

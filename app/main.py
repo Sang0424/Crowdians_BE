@@ -54,12 +54,18 @@ async def domain_error_handler(request: Request, exc: DomainError):
     if localized_message == error_key:
         localized_message = exc.message
 
+    headers = {
+        "Access-Control-Allow-Origin": settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
+    
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "detail": localized_message,
             "code": exc.code
         },
+        headers=headers
     )
 
 @app.exception_handler(Exception)
@@ -67,9 +73,14 @@ async def global_exception_handler(request: Request, exc: Exception):
     import traceback
     logging.error(f"Unhandled error: {exc}")
     logging.error(traceback.format_exc())
+    headers = {
+        "Access-Control-Allow-Origin": settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS else "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal Server Error", "error": str(exc)}
+        content={"detail": "Internal Server Error", "error": str(exc)},
+        headers=headers
     )
 
 app.include_router(api_v1_router)
