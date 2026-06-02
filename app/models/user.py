@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 
 class UserStats(BaseModel):
     """유저 기본 스탯"""
-    level: int = 1
-    exp: int = 0
+    level: int = 1                 # 유저 레벨
+    exp: int = 0                   # 경험치
     branches_created: int = 0      # 생성한 분기 수
     likes_received: int = 0        # 받은 좋아요 총합
     conversations_joined: int = 0  # 참여한 대화 수

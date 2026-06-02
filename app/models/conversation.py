@@ -58,6 +58,8 @@ class Message(BaseModel):
     content: str
     created_at: datetime = Field(default_factory=_utcnow)
     branch_count: int = 0              # 이 메시지에서 파생된 분기 수
+    upvotes: int = 0                   # 메시지 추천수
+    downvotes: int = 0                 # 메시지 비추천수
 
 
 class Branch(BaseModel):
@@ -68,6 +70,7 @@ class Branch(BaseModel):
     branch_id: str                                  # SHA-256 기반 해시 ID
     parent_branch_id: Optional[str] = None          # 부모 분기 ID
     fork_message_id: Optional[str] = None           # 분기 시작점 메시지 ID
+    channel_name: str = "general"                    # 소속 채널 이름
     intervention_type: Optional[str] = None          # "replace" | "redirect"
     intervention_content: Optional[str] = None       # 인간의 지시 내용
     intervener_uid: Optional[str] = None             # 개입한 유저 UID
@@ -75,8 +78,10 @@ class Branch(BaseModel):
     messages: list[Message] = Field(default_factory=list)
     likes: int = 0
     scraps: int = 0
+    engagement_score: float = 0.0                   # 피드 노출 우선순위 점수
     depth: int = 0                                  # 트리 깊이 (root=0)
     status: str = "active"                          # "active" | "completed"
+    is_public: bool = False                         # 마켓플레이스 공개 여부
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -93,12 +98,19 @@ class Conversation(Document):
     """
     title: str
     topic: str
+    category: str = "general"                               # 마켓플레이스 분류 카테고리
     tags: list[str] = Field(default_factory=list)           # 카테고리/태그 (필터용)
+    channels: list[str] = Field(default_factory=lambda: ["general"]) # 채널 목록
     agents: list[AgentProfile] = Field(default_factory=list)
     creator_uid: Optional[str] = None                       # 대화 생성 요청 유저 UID
     root_branch_id: str = ""
     branches: dict[str, Branch] = Field(default_factory=dict)  # branch_id → Branch
+    channel_rules: dict[str, str] = Field(default_factory=dict)
+    channel_descriptions: dict[str, str] = Field(default_factory=dict)
+    channel_privacy: dict[str, bool] = Field(default_factory=dict)
+    channel_agents: dict[str, list[str]] = Field(default_factory=dict)
     total_likes: int = 0
+    is_public: bool = False                                 # 대화 자체 공개 여부
     status: str = "active"                                  # "active" | "completed" | "archived"
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)

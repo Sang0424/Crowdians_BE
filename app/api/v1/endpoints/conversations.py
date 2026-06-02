@@ -8,8 +8,9 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from datetime import datetime
 
-from app.core.security import CurrentUser
+from app.core.security import CurrentUser, CurrentUserOptional
 from app.models.conversation import AgentProfile, Branch, Conversation
+from app.models.interaction import UserInteraction
 from app.services import conversation_service
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
@@ -40,6 +41,7 @@ class CreateBranchRequest(BaseModel):
     fork_message_id: str
     intervention_type: str              # "replace" | "redirect"
     intervention_content: str
+    channel_name: str = "general"
 
 
 class MessageOut(BaseModel):
@@ -48,12 +50,16 @@ class MessageOut(BaseModel):
     content: str
     created_at: datetime
     branch_count: int
+    upvotes: int = 0
+    downvotes: int = 0
+    user_vote: Optional[str] = None
 
 
 class BranchOut(BaseModel):
     branch_id: str
     parent_branch_id: Optional[str]
     fork_message_id: Optional[str]
+    channel_name: str
     intervention_type: Optional[str]
     intervention_content: Optional[str]
     intervener_uid: Optional[str]
@@ -83,6 +89,7 @@ class ConversationDetailOut(BaseModel):
     title: str
     topic: str
     tags: list[str]
+    channels: list[str] = []
     agents: list[AgentProfileIn]
     root_branch_id: str
     branch_tree: dict               # 해시트리 직렬화 결과
@@ -96,6 +103,27 @@ class InteractionResponse(BaseModel):
     success: bool
     count: int
     state: bool                     # liked/scrapped 여부
+
+
+class MessageVoteResponse(BaseModel):
+    success: bool
+    upvotes: int
+    downvotes: int
+    user_vote: Optional[str] = None
+
+
+class ChannelMetrics(BaseModel):
+    total_branches: int
+    total_likes: int
+    total_scraps: int
+    total_upvotes: int
+    total_downvotes: int
+
+
+class ChannelScoreResponse(BaseModel):
+    channel_name: str
+    score: float
+    metrics: ChannelMetrics
 
 
 # ─────────────────────────────────────────────
@@ -164,13 +192,28 @@ async def get_conversation(conversation_id: str):
 
 
 @router.get("/{conversation_id}/branches/{branch_id}", response_model=dict, summary="특정 분기 메시지 조회")
-async def get_branch_messages(conversation_id: str, branch_id: str):
+async def get_branch_messages(
+    conversation_id: str,
+    branch_id: str,
+    current_user: CurrentUserOptional,
+):
     conv = await conversation_service.get_conversation(conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="대화를 찾을 수 없습니다.")
     branch = conv.branches.get(branch_id)
     if not branch:
         raise HTTPException(status_code=404, detail="분기를 찾을 수 없습니다.")
+
+    user_votes = {}
+    if current_user:
+        interactions = await UserInteraction.find(
+            UserInteraction.uid == current_user.uid,
+            UserInteraction.conversation_id == conversation_id,
+            UserInteraction.branch_id == branch_id,
+            {"interaction_type": {"$in": ["upvote", "downvote"]}}
+        ).to_list()
+        user_votes = {i.message_id: i.interaction_type for i in interactions if i.message_id}
+
     return {
         "branch_id": branch.branch_id,
         "messages": [
@@ -180,6 +223,9 @@ async def get_branch_messages(conversation_id: str, branch_id: str):
                 content=m.content,
                 created_at=m.created_at,
                 branch_count=m.branch_count,
+                upvotes=getattr(m, "upvotes", 0) or 0,
+                downvotes=getattr(m, "downvotes", 0) or 0,
+                user_vote=user_votes.get(m.message_id)
             ).model_dump()
             for m in branch.messages
         ],
@@ -202,6 +248,7 @@ async def create_branch(
         intervention_type=body.intervention_type,
         intervention_content=body.intervention_content,
         intervener_uid=current_user.uid,
+        channel_name=body.channel_name,
     )
     return _branch_to_out(branch)
 
@@ -244,6 +291,7 @@ def _conv_to_detail(conv: Conversation) -> ConversationDetailOut:
         title=conv.title,
         topic=conv.topic,
         tags=conv.tags,
+        channels=conv.channels,
         agents=[
             AgentProfileIn(
                 agent_id=a.agent_id,
@@ -269,6 +317,7 @@ def _branch_to_out(branch: Branch) -> BranchOut:
         branch_id=branch.branch_id,
         parent_branch_id=branch.parent_branch_id,
         fork_message_id=branch.fork_message_id,
+        channel_name=branch.channel_name,
         intervention_type=branch.intervention_type,
         intervention_content=branch.intervention_content,
         intervener_uid=branch.intervener_uid,
@@ -280,3 +329,86 @@ def _branch_to_out(branch: Branch) -> BranchOut:
         message_count=len(branch.messages),
         created_at=branch.created_at,
     )
+
+
+class CreateChannelRequest(BaseModel):
+    channel_name: str
+    description: Optional[str] = ""
+    rules: Optional[str] = ""
+    is_private: Optional[bool] = False
+    invited_agent_ids: Optional[list[str]] = []
+
+
+@router.post("/{conversation_id}/channels", response_model=ConversationDetailOut, summary="채널 생성")
+async def create_channel(
+    conversation_id: str,
+    body: CreateChannelRequest,
+    current_user: CurrentUser,
+):
+    try:
+        conv = await conversation_service.add_channel(
+            conversation_id=conversation_id,
+            channel_name=body.channel_name,
+            description=body.description,
+            rules=body.rules,
+            is_private=body.is_private,
+            invited_agent_ids=body.invited_agent_ids
+        )
+        return _conv_to_detail(conv)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{conversation_id}/branches/{branch_id}/messages/{message_id}/upvote", response_model=MessageVoteResponse, summary="메시지 추천 토글")
+async def toggle_message_upvote(
+    conversation_id: str,
+    branch_id: str,
+    message_id: str,
+    current_user: CurrentUser,
+):
+    try:
+        res = await conversation_service.toggle_message_vote(
+            uid=current_user.uid,
+            conversation_id=conversation_id,
+            branch_id=branch_id,
+            message_id=message_id,
+            vote_type="upvote",
+        )
+        return MessageVoteResponse(**res)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{conversation_id}/branches/{branch_id}/messages/{message_id}/downvote", response_model=MessageVoteResponse, summary="메시지 비추천 토글")
+async def toggle_message_downvote(
+    conversation_id: str,
+    branch_id: str,
+    message_id: str,
+    current_user: CurrentUser,
+):
+    try:
+        res = await conversation_service.toggle_message_vote(
+            uid=current_user.uid,
+            conversation_id=conversation_id,
+            branch_id=branch_id,
+            message_id=message_id,
+            vote_type="downvote",
+        )
+        return MessageVoteResponse(**res)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/{conversation_id}/channels/{channel_name}/score", response_model=ChannelScoreResponse, summary="채널 선호도 점수 계산")
+async def get_channel_preference_score(
+    conversation_id: str,
+    channel_name: str,
+):
+    try:
+        res = await conversation_service.calculate_channel_preference_score(
+            conversation_id=conversation_id,
+            channel_name=channel_name,
+        )
+        return ChannelScoreResponse(**res)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

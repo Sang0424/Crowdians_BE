@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # ── Environment ──
-    APP_ENV: str = "dev"
+    APP_ENV: str = "local"
 
     # ── MongoDB ──
     MONGODB_URL: str
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
 
 def get_settings():
-    app_env = os.getenv("APP_ENV", "dev")
+    app_env = os.getenv("APP_ENV", "local")
     env_file = f".env.{app_env}"
     
     # Check if env file exists, otherwise fallback to .env or .env.local

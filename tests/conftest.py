@@ -31,13 +31,17 @@ async def setup_db():
     
     from app.models.user import User
     from app.models.chat import ChatConversation
-    from app.models.archive import ArchivePost, ArchiveAnswer
-    from app.models.academy import KnowledgeCard
-    from app.models.mailbox import Mail
+    from app.models.conversation import Conversation
+    from app.models.interaction import UserInteraction
 
     await init_beanie(
         database=database,
-        document_models=[User, ChatConversation, ArchivePost, ArchiveAnswer, KnowledgeCard, Mail],
+        document_models=[
+            User,
+            ChatConversation,
+            Conversation,
+            UserInteraction,
+        ],
     )
     yield database
 

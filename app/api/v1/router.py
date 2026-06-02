@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import auth, users, reports
-from app.api.v1.endpoints import conversations, agents
+from app.api.v1.endpoints import conversations, agents, ws, feed
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -21,3 +21,9 @@ api_v1_router.include_router(agents.router)
 
 # ── 신고 ──
 api_v1_router.include_router(reports.router, tags=["Reports"])
+
+# ── WebSocket ──
+api_v1_router.include_router(ws.router)
+
+# ── Feed (Marketplace) ──
+api_v1_router.include_router(feed.router)

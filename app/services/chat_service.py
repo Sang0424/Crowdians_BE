@@ -256,13 +256,6 @@ async def send_chat_message(
     if check_daily_reset(user):
         await user.save()
 
-    # 1. 스태미나 확인 (프리미엄은 무제한)
-    is_premium = user.subscription_plan == "premium"
-    # 1. 스태미나 확인 (프리미엄은 무제한)
-    is_premium = user.subscription_plan == "premium"
-    if not is_premium and user.stats.stamina < 2:
-        raise ValueError("스태미나가 부족합니다. (2 필요)")
-    
     # 2. 대화 세션 조회 및 과거 내역 구성 (RAG/Golden Dataset 참조 가능)
     conv = await get_or_create_conversation(user.uid)
     
@@ -323,34 +316,6 @@ async def send_chat_message(
     conv.updatedAt = now
     await conv.save()
     
-    # 4. 유저 스탯 갱신
-    # 4. 유저 스탯 갱신
-    if not is_premium:
-        user.stats.stamina -= 2
-    
-    # --- 보상 계산 ---
-    # 4-1. 경험치 (EXP)
-    exp_gained = 0
-    if user.stats.daily_chat_exp < 50:
-        exp_gain = min(2, 50 - user.stats.daily_chat_exp)
-        user.stats.exp += exp_gain
-        user.stats.daily_chat_exp += exp_gain
-        exp_gained = exp_gain
-    
-    # 4-2. 골드 (Gold) - 3% 확률로 1~3 Gold 발견 (이스터에그)
-    gold_gained = 0
-    import random
-    if random.random() < 0.03:
-        gold_gained = random.randint(1, 3)
-        user.stats.gold += gold_gained
-        
-    # user.stats.intimacy += 1 (지시: 채팅 시 친밀도 상승 제거)
-    
-    # 레벨업 로직
-    user.stats.process_level_up(max_stamina=user.max_stamina)
-        
-    await user.save()
-    
     return {
         "userMessage": {
             "role": user_msg.role,
@@ -362,9 +327,9 @@ async def send_chat_message(
             "content": ai_msg.content,
             "createdAt": ai_msg.createdAt
         },
-        "expGained": exp_gained,
-        "goldGained": gold_gained,  # 추가된 필드
-        "staminaConsumed": 0 if is_premium else 2,
+        "expGained": 0,
+        "goldGained": 0,
+        "staminaConsumed": 0,
         "intimacyGained": 0,
     }
 
@@ -512,8 +477,8 @@ async def send_guest_chat_message(
             "content": ai_message_text,
             "createdAt": datetime.utcnow().isoformat()
         },
-        "expGained": 2,
-        "staminaConsumed": 1,
+        "expGained": 0,
+        "staminaConsumed": 0,
         "intimacyGained": 0,
         "requiresLogin": False
     }
@@ -659,12 +624,6 @@ async def stream_chat_message(
         if check_daily_reset(user):
             await user.save()
 
-        is_premium = user.subscription_plan == "premium"
-        is_premium = user.subscription_plan == "premium"
-        if not is_premium and user.stats.stamina < 2:
-            yield {"type": "error", "data": {"message": "스태미나가 부족합니다. (2 필요)"}}
-            return
-
         conv = await get_or_create_conversation(user.uid)
         system_instruction = get_system_prompt_for_character(user.character.type, user.nickname, locale)
         
@@ -725,8 +684,6 @@ async def stream_chat_message(
         return
 
     # 2. 사후 처리
-    exp_gained = 0
-    gold_gained = 0
     now = datetime.now(timezone.utc)
     
     if user:
@@ -738,38 +695,14 @@ async def stream_chat_message(
         conv.messages = list(conv.messages) + [user_msg, ai_msg]
         conv.updatedAt = now
         await conv.save()
-        
-        # 스탯 갱신
-        is_premium = user.subscription_plan == "premium"
-        if not is_premium:
-            user.stats.stamina -= 2
-        if user.stats.daily_chat_exp < 50:
-            exp_gain = min(2, 50 - user.stats.daily_chat_exp)
-            user.stats.exp += exp_gain
-            user.stats.daily_chat_exp += exp_gain
-            exp_gained = exp_gain
-        
-        import random
-        if random.random() < 0.03:
-            gold_gained = random.randint(1, 3)
-            user.stats.gold += gold_gained
-            
-        user.stats.process_level_up(max_stamina=user.max_stamina)
-        await user.save()
-    else:
-        # 게스트 유저 보상 계산 (DB 저장 안 함, 프론트엔드 전달용)
-        exp_gained = 2
-        import random
-        if random.random() < 0.03:
-            gold_gained = random.randint(1, 3)
-
+    
     # 3. 완료 이벤트 전송
     yield {
         "type": "stats",
         "data": {
-            "expGained": exp_gained,
-            "goldGained": gold_gained,
-            "staminaConsumed": 0 if (user and user.subscription_plan == "premium") else 2,
+            "expGained": 0,
+            "goldGained": 0,
+            "staminaConsumed": 0,
             "intimacyGained": 0
         }
     }

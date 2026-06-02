@@ -3,6 +3,7 @@
 대화(Conversation) 및 분기(Branch) 핵심 비즈니스 로직.
 """
 
+import math
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -14,7 +15,13 @@ from app.models.conversation import (
     AgentProfile,
     generate_branch_id,
 )
-from app.models.interaction import UserInteraction, INTERACTION_LIKE, INTERACTION_SCRAP
+from app.models.interaction import (
+    UserInteraction,
+    INTERACTION_LIKE,
+    INTERACTION_SCRAP,
+    INTERACTION_UPVOTE,
+    INTERACTION_DOWNVOTE,
+)
 from app.models.user import User
 
 
@@ -37,6 +44,7 @@ async def create_conversation(
     root_branch_id = generate_branch_id(None, None, None)
     root_branch = Branch(
         branch_id=root_branch_id,
+        channel_name="general",
         depth=0,
     )
 
@@ -44,6 +52,7 @@ async def create_conversation(
         title=title,
         topic=topic,
         tags=tags,
+        channels=["general"],
         agents=agents,
         creator_uid=creator_uid,
         root_branch_id=root_branch_id,
@@ -88,6 +97,7 @@ async def create_branch(
     intervention_type: str,      # "replace" | "redirect"
     intervention_content: str,
     intervener_uid: str,
+    channel_name: str = "general",
 ) -> tuple[Conversation, Branch]:
     """
     특정 메시지 지점에서 새 분기를 생성합니다.
@@ -123,6 +133,7 @@ async def create_branch(
         branch_id=new_branch_id,
         parent_branch_id=parent_branch_id,
         fork_message_id=fork_message_id,
+        channel_name=channel_name,
         intervention_type=intervention_type,
         intervention_content=intervention_content,
         intervener_uid=intervener_uid,
@@ -304,6 +315,7 @@ def serialize_branch_tree(conv: Conversation) -> dict:
             "branch_id": branch.branch_id,
             "parent_branch_id": branch.parent_branch_id,
             "fork_message_id": branch.fork_message_id,
+            "channel_name": branch.channel_name,
             "intervention_type": branch.intervention_type,
             "intervention_content": branch.intervention_content,
             "intervener_uid": branch.intervener_uid,
@@ -319,3 +331,209 @@ def serialize_branch_tree(conv: Conversation) -> dict:
         }
 
     return _build_node(conv.root_branch_id) or {}
+
+
+async def add_channel(
+    conversation_id: str,
+    channel_name: str,
+    description: str = "",
+    rules: str = "",
+    is_private: bool = False,
+    invited_agent_ids: list[str] = None
+) -> Conversation:
+    """대화방(서버) 내 새로운 채널 등록 및 해당 채널의 루트 브랜치 생성."""
+    conv = await Conversation.get(conversation_id)
+    if not conv:
+        raise ValueError("대화를 찾을 수 없습니다.")
+
+    if channel_name not in conv.channels:
+        conv.channels.append(channel_name)
+
+    # 해당 채널용 루트 브랜치 생성
+    has_branch = any(b.channel_name == channel_name and b.parent_branch_id is None for b in conv.branches.values())
+    if not has_branch:
+        root_branch_id = generate_branch_id(None, None, channel_name)
+        root_branch = Branch(
+            branch_id=root_branch_id,
+            channel_name=channel_name,
+            depth=0,
+        )
+        conv.branches[root_branch_id] = root_branch
+
+    # 추가 메타데이터 정보 저장
+    if conv.channel_rules is None:
+        conv.channel_rules = {}
+    if conv.channel_descriptions is None:
+        conv.channel_descriptions = {}
+    if conv.channel_privacy is None:
+        conv.channel_privacy = {}
+    if conv.channel_agents is None:
+        conv.channel_agents = {}
+
+    conv.channel_rules[channel_name] = rules
+    conv.channel_descriptions[channel_name] = description
+    conv.channel_privacy[channel_name] = is_private
+    conv.channel_agents[channel_name] = invited_agent_ids or []
+
+    conv.updated_at = _utcnow()
+    await conv.save()
+    return conv
+
+
+async def toggle_message_vote(
+    uid: str,
+    conversation_id: str,
+    branch_id: str,
+    message_id: str,
+    vote_type: str,
+) -> dict:
+    """메시지 추천/비추천 토글. 반환: {'success': bool, 'upvotes': int, 'downvotes': int, 'user_vote': Optional[str]}"""
+    if vote_type not in (INTERACTION_UPVOTE, INTERACTION_DOWNVOTE):
+        raise ValueError("Invalid vote type")
+
+    conv = await Conversation.get(conversation_id)
+    if not conv:
+        raise ValueError("Conversation not found")
+
+    branch = conv.branches.get(branch_id)
+    if not branch:
+        raise ValueError("Branch not found")
+
+    message = next((m for m in branch.messages if m.message_id == message_id), None)
+    if not message:
+        raise ValueError("Message not found")
+
+    # 기존 투표 조회 (upvote 또는 downvote)
+    existing = await UserInteraction.find_one(
+        UserInteraction.uid == uid,
+        UserInteraction.conversation_id == conversation_id,
+        UserInteraction.branch_id == branch_id,
+        UserInteraction.message_id == message_id,
+        {"interaction_type": {"$in": [INTERACTION_UPVOTE, INTERACTION_DOWNVOTE]}},
+    )
+
+    user_vote = None
+    if existing:
+        if existing.interaction_type == vote_type:
+            # 같은 투표 클릭 시 투표 취소
+            await existing.delete()
+            if vote_type == INTERACTION_UPVOTE:
+                message.upvotes = max(0, message.upvotes - 1)
+            else:
+                message.downvotes = max(0, message.downvotes - 1)
+        else:
+            # 다른 투표 클릭 시 기존 투표 변경 (취소 후 새로 등록)
+            if existing.interaction_type == INTERACTION_UPVOTE:
+                message.upvotes = max(0, message.upvotes - 1)
+                message.downvotes += 1
+            else:
+                message.downvotes = max(0, message.downvotes - 1)
+                message.upvotes += 1
+            existing.interaction_type = vote_type
+            await existing.save()
+            user_vote = vote_type
+    else:
+        # 투표 신규 등록
+        interaction = UserInteraction(
+            uid=uid,
+            conversation_id=conversation_id,
+            branch_id=branch_id,
+            message_id=message_id,
+            interaction_type=vote_type,
+        )
+        await interaction.insert()
+        if vote_type == INTERACTION_UPVOTE:
+            message.upvotes += 1
+        else:
+            message.downvotes += 1
+        user_vote = vote_type
+
+    conv.updated_at = _utcnow()
+    await conv.save()
+
+    return {
+        "success": True,
+        "upvotes": message.upvotes,
+        "downvotes": message.downvotes,
+        "user_vote": user_vote,
+    }
+
+
+async def calculate_channel_preference_score(
+    conversation_id: str,
+    channel_name: str,
+) -> dict:
+    """
+    채널 내의 모든 브랜치와 메시지의 인터랙션을 취합하고 시간 감쇠(Time Decay)를 고려해 채널 선호도 점수를 계산합니다.
+    """
+    conv = await Conversation.get(conversation_id)
+    if not conv:
+        raise ValueError("Conversation not found")
+
+    channel_branches = [
+        b for b in conv.branches.values() if b.channel_name == channel_name
+    ]
+
+    w_branch = 5.0
+    w_like = 2.0
+    w_scrap = 3.0
+    w_up = 1.0
+    w_down = 1.5
+
+    total_score = 0.0
+    total_branches = len(channel_branches)
+    total_likes = 0
+    total_scraps = 0
+    total_upvotes = 0
+    total_downvotes = 0
+
+    now = datetime.now(timezone.utc)
+
+    for b in channel_branches:
+        likes = b.likes or 0
+        scraps = b.scraps or 0
+        total_likes += likes
+        total_scraps += scraps
+
+        branch_upvotes = 0
+        branch_downvotes = 0
+        for m in b.messages:
+            m_up = getattr(m, "upvotes", 0) or 0
+            m_down = getattr(m, "downvotes", 0) or 0
+            branch_upvotes += m_up
+            branch_downvotes += m_down
+
+        total_upvotes += branch_upvotes
+        total_downvotes += branch_downvotes
+
+        # Branch activity (deeper tree branching gives slightly more score)
+        branch_activity = w_branch * (1.0 + math.log1p(len(b.child_branch_ids or [])))
+
+        # Raw score summation
+        branch_raw_score = (
+            branch_activity
+            + (w_like * likes)
+            + (w_scrap * scraps)
+            + (w_up * branch_upvotes)
+            - (w_down * branch_downvotes)
+        )
+
+        # Time decay: T_age in hours. Decay = 1 / (T_age + 2)^1.5
+        b_created_at = b.created_at.replace(tzinfo=timezone.utc) if b.created_at.tzinfo is None else b.created_at
+        age_delta = now - b_created_at
+        age_in_hours = age_delta.total_seconds() / 3600.0
+        decay_factor = 1.0 / ((age_in_hours + 2.0) ** 1.5)
+
+        total_score += branch_raw_score * decay_factor
+
+    return {
+        "channel_name": channel_name,
+        "score": round(total_score, 4),
+        "metrics": {
+            "total_branches": total_branches,
+            "total_likes": total_likes,
+            "total_scraps": total_scraps,
+            "total_upvotes": total_upvotes,
+            "total_downvotes": total_downvotes,
+        },
+    }
