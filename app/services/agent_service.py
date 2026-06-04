@@ -122,6 +122,7 @@ async def generate_agent_reply(
     all_agents: list[AgentProfile],
     intervention: Optional[str] = None,
     intervention_type: Optional[str] = None,
+    relationships: Optional[list] = None,
 ) -> Message:
     """
     에이전트가 다음 메시지를 생성합니다.
@@ -134,11 +135,27 @@ async def generate_agent_reply(
         f"- {a.name}: {a.persona}" for a in all_agents
     )
 
+    # 에이전트 간의 관계 정보 컨텍스트 구성
+    rel_desc_list = []
+    if relationships:
+        for rel in relationships:
+            # 본인(agent)과 연관된 관계 정보만 주입
+            if rel.agent_id_a == agent.agent_id or rel.agent_id_b == agent.agent_id:
+                other_id = rel.agent_id_b if rel.agent_id_a == agent.agent_id else rel.agent_id_a
+                other_agent = next((a for a in all_agents if a.agent_id == other_id), None)
+                if other_agent:
+                    rel_desc_list.append(
+                        f"- {other_agent.name}와의 관계: {rel.relationship_label} (친밀도: {rel.affinity}%). {rel.description}"
+                    )
+    rel_context = "\n".join(rel_desc_list) if rel_desc_list else "다른 에이전트들과의 특별한 관계 설정이나 감정 상태는 없습니다."
+
     system_prompt = (
         f"You are {agent.name}. {agent.persona}\n\n"
         f"다음 에이전트들과 함께 대화 중입니다:\n{agents_desc}\n\n"
+        f"주변 인물(에이전트)들과의 현재 관계:\n{rel_context}\n\n"
         "자연스러운 한국어 대화로 응답하세요. "
         "다른 에이전트의 이름을 부를 때 '@이름' 형식을 사용하세요. "
+        "각 에이전트와의 친밀도 및 관계 상태(우호적, 대립적 등)에 적절히 부합하는 톤앤매너로 대답하세요. "
         "짧고 명확하게 응답하세요 (3~5문장 이내)."
     )
 
@@ -183,3 +200,71 @@ async def generate_agent_reply(
         agent_id=agent.agent_id,
         content=content,
     )
+
+
+# ── Structured Relationship Schema (Pydantic V2) ──
+from pydantic import BaseModel, Field
+
+class RelationshipItem(BaseModel):
+    agent_id_a: str
+    agent_id_b: str
+    affinity: int = Field(..., ge=0, le=100)
+    relationship_label: str = Field(..., description="A short dynamic label (e.g. 'Ideological Conflict', 'Mutual Trust', 'Pragmatic Alliance')")
+    sentiment: str = Field(..., description="Relationship tone/sentiment classification: 'positive' (friendly/trust), 'neutral' (business/uncertain), or 'negative' (conflict/distrust)")
+    description: str = Field(..., description="Brief 1-2 sentence description of their current relationship based on conversation flow")
+
+class RelationshipAnalysisResponse(BaseModel):
+    relationships: list[RelationshipItem]
+
+
+async def analyze_agent_relationships(
+    agents: list[AgentProfile],
+    history: list[Message],
+) -> list[RelationshipItem]:
+    """
+    에이전트 목록과 대화 로그를 분석하여 에이전트 간의 관계 정보를 구조화하여 도출합니다.
+    """
+    if len(agents) < 2:
+        return []
+
+    # 에이전트 목록 컨텍스트
+    agents_desc = "\n".join(
+        f"- {a.name} (ID: {a.agent_id}): {a.persona}" for a in agents
+    )
+
+    # 대화 로그 텍스트화
+    agent_map = {a.agent_id: a.name for a in agents}
+    log_lines = []
+    for msg in history:
+        speaker_name = agent_map.get(msg.agent_id, "Unknown/User")
+        log_lines.append(f"[{speaker_name} (ID: {msg.agent_id})]: {msg.content}")
+    conversation_log = "\n".join(log_lines)
+
+    prompt = (
+        "다음은 서로 다른 페르소나를 지닌 AI 에이전트들의 대화 로그입니다.\n"
+        "이 대화 로그를 분석하여 에이전트 쌍(Pair) 간의 친밀도(affinity, 0~100), "
+        "서로를 어떻게 정의하는지 나타내는 짧은 레이블(relationship_label, 예: 'Ideological Conflict', 'Pragmatic Alliance'), "
+        "둘 사이의 전반적인 정서 분류(sentiment: 'positive', 'neutral', 'negative' 중 택 1), "
+        "그리고 대화 내용을 토대로 그 관계의 현 상태를 상세 설명하는 한 문장(description)을 채워주세요.\n\n"
+        f"[참여 에이전트 목록]\n{agents_desc}\n\n"
+        f"[대화 로그]\n{conversation_log}\n\n"
+        "결과를 반드시 JSON 스키마에 맞춰 반환하세요. agent_id는 목록에 명시된 ID를 정확히 매칭해 주어야 합니다."
+    )
+
+    try:
+        response = _gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=RelationshipAnalysisResponse,
+                temperature=0.2,
+            ),
+        )
+        import json
+        data = json.loads(response.text)
+        result = RelationshipAnalysisResponse(**data)
+        return result.relationships
+    except Exception as e:
+        print(f"[Error in analyze_agent_relationships] {e}")
+        return []

@@ -175,6 +175,12 @@ async def add_message_to_branch(
     branch.messages.append(message)
     conv.updated_at = _utcnow()
     await conv.save()
+
+    # 10턴마다 비동기로 에이전트 간의 관계 업데이트
+    if len(branch.messages) % 10 == 0:
+        import asyncio
+        asyncio.create_task(update_agent_relationships_task(conversation_id, branch_id))
+
     return conv
 
 
@@ -537,3 +543,60 @@ async def calculate_channel_preference_score(
             "total_downvotes": total_downvotes,
         },
     }
+
+
+async def update_agent_relationships_task(conversation_id: str, branch_id: str):
+    """
+    비동기 백그라운드 태스크: 대화 로그를 기반으로 에이전트 간 관계를 추론하여 갱신합니다.
+    """
+    from app.services import agent_service
+    from app.models.conversation import AgentRelationship
+
+    conv = await Conversation.get(conversation_id)
+    if not conv:
+        print(f"[update_agent_relationships_task] Conversation {conversation_id} not found.")
+        return
+
+    branch = conv.branches.get(branch_id)
+    if not branch:
+        print(f"[update_agent_relationships_task] Branch {branch_id} not found.")
+        return
+
+    # 현재 채널의 활성화된 에이전트
+    channel_agents_ids = (conv.channel_agents or {}).get(branch.channel_name, [])
+    if channel_agents_ids:
+        active_agents = [a for a in conv.agents if a.agent_id in channel_agents_ids]
+    else:
+        active_agents = conv.agents
+
+    # 대화 히스토리
+    history = branch.messages
+
+    # LLM 분석 실행 (Gemini Structured Outputs)
+    analyzed_items = await agent_service.analyze_agent_relationships(active_agents, history)
+    if not analyzed_items:
+        print("[update_agent_relationships_task] No relationship updates derived.")
+        return
+
+    # 기존 관계를 딕셔너리로 관리하여 갱신
+    existing_rels = {f"{r.agent_id_a}-{r.agent_id_b}": r for r in getattr(conv, "relationships", []) or []}
+
+    for item in analyzed_items:
+        # 순서 정렬하여 유니크 키 보장 (단방향 쌍 저장)
+        sorted_ids = sorted([item.agent_id_a, item.agent_id_b])
+        key = f"{sorted_ids[0]}-{sorted_ids[1]}"
+
+        existing_rels[key] = AgentRelationship(
+            agent_id_a=sorted_ids[0],
+            agent_id_b=sorted_ids[1],
+            affinity=item.affinity,
+            relationship_label=item.relationship_label,
+            sentiment=item.sentiment,
+            description=item.description,
+            updated_at=_utcnow()
+        )
+
+    conv.relationships = list(existing_rels.values())
+    conv.updated_at = _utcnow()
+    await conv.save()
+    print(f"[update_agent_relationships_task] Successfully updated relationships for Conversation {conversation_id}")

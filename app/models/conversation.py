@@ -51,6 +51,17 @@ class AgentProfile(BaseModel):
     api_key_id: Optional[str] = None   # 외부 에이전트 연동 시 API Key 식별자
 
 
+class AgentRelationship(BaseModel):
+    """에이전트 쌍 간의 동적 관계 정보"""
+    agent_id_a: str
+    agent_id_b: str
+    affinity: int = 50                      # 0 ~ 100 친밀도
+    relationship_label: str = "Neutral"     # 요약 레이블
+    sentiment: str = "neutral"              # "positive" | "neutral" | "negative"
+    description: Optional[str] = None       # 상세 서사
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class Message(BaseModel):
     """개별 채팅 메시지"""
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -102,6 +113,7 @@ class Conversation(Document):
     tags: list[str] = Field(default_factory=list)           # 카테고리/태그 (필터용)
     channels: list[str] = Field(default_factory=lambda: ["general"]) # 채널 목록
     agents: list[AgentProfile] = Field(default_factory=list)
+    relationships: list[AgentRelationship] = Field(default_factory=list)
     creator_uid: Optional[str] = None                       # 대화 생성 요청 유저 UID
     root_branch_id: str = ""
     branches: dict[str, Branch] = Field(default_factory=dict)  # branch_id → Branch

@@ -4,7 +4,7 @@
 """
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -84,6 +84,16 @@ class ConversationSummaryOut(BaseModel):
     created_at: datetime
 
 
+class AgentRelationshipOut(BaseModel):
+    agent_id_a: str
+    agent_id_b: str
+    affinity: int
+    relationship_label: str
+    sentiment: str
+    description: Optional[str] = None
+    updated_at: datetime
+
+
 class ConversationDetailOut(BaseModel):
     id: str
     title: str
@@ -91,10 +101,13 @@ class ConversationDetailOut(BaseModel):
     tags: list[str]
     channels: list[str] = []
     agents: list[AgentProfileIn]
+    relationships: list[AgentRelationshipOut] = []
+    channel_agents: dict[str, list[str]] = {}
     root_branch_id: str
     branch_tree: dict               # 해시트리 직렬화 결과
     total_likes: int
     status: str
+    creator_uid: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -237,6 +250,7 @@ async def create_branch(
     conversation_id: str,
     body: CreateBranchRequest,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ):
     if body.intervention_type not in ("replace", "redirect"):
         raise HTTPException(status_code=400, detail="intervention_type은 'replace' 또는 'redirect'이어야 합니다.")
@@ -250,6 +264,14 @@ async def create_branch(
         intervener_uid=current_user.uid,
         channel_name=body.channel_name,
     )
+
+    # 비동기로 에이전트 간의 관계 업데이트
+    background_tasks.add_task(
+        conversation_service.update_agent_relationships_task,
+        conversation_id,
+        branch.branch_id
+    )
+
     return _branch_to_out(branch)
 
 
@@ -303,10 +325,24 @@ def _conv_to_detail(conv: Conversation) -> ConversationDetailOut:
             )
             for a in conv.agents
         ],
+        relationships=[
+            AgentRelationshipOut(
+                agent_id_a=r.agent_id_a,
+                agent_id_b=r.agent_id_b,
+                affinity=r.affinity,
+                relationship_label=r.relationship_label,
+                sentiment=getattr(r, "sentiment", "neutral"),
+                description=r.description,
+                updated_at=r.updated_at,
+            )
+            for r in getattr(conv, "relationships", []) or []
+        ],
+        channel_agents=conv.channel_agents or {},
         root_branch_id=conv.root_branch_id,
         branch_tree=conversation_service.serialize_branch_tree(conv),
         total_likes=conv.total_likes,
         status=conv.status,
+        creator_uid=conv.creator_uid,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
     )
