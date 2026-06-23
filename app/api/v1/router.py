@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, reports
-from app.api.v1.endpoints import conversations, agents, ws, feed
+from app.api.v1.endpoints import auth, users, reports, dpo, billing
+from app.api.v1.endpoints import channels, agents, ws, feed
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -14,7 +14,7 @@ api_v1_router.include_router(auth.router, tags=["Auth"])
 api_v1_router.include_router(users.router, tags=["Users"])
 
 # ── 대화 & 분기 ──
-api_v1_router.include_router(conversations.router)
+api_v1_router.include_router(channels.router)
 
 # ── AI Agent ──
 api_v1_router.include_router(agents.router)
@@ -27,3 +27,11 @@ api_v1_router.include_router(ws.router)
 
 # ── Feed (Marketplace) ──
 api_v1_router.include_router(feed.router)
+
+# ── DPO 데이터셋 ──
+api_v1_router.include_router(dpo.router)
+
+# ── 결제 및 젬 ──
+api_v1_router.include_router(billing.router, tags=["Billing"])
+
+
