@@ -15,7 +15,7 @@ from google.genai import types as genai_types
 
 from app.core.config import settings
 from app.models.agent_key import AgentKey
-from app.models.conversation import AgentProfile, Branch, Message
+from app.models.channel import AgentProfile, Branch, Message
 
 
 # ── Gemini 클라이언트 ──
@@ -40,9 +40,11 @@ async def issue_agent_key(
     avatar_url: str = "",
 ) -> AgentKey:
     """새 AI Agent를 등록하고 API Key를 발급합니다."""
-    # 기존 에이전트 수로 컬러 결정
-    count = await AgentKey.count()
-    color = _AGENT_COLORS[count % len(_AGENT_COLORS)]
+    owner_agent_count = await AgentKey.find(AgentKey.owner_uid == owner_uid).count()
+    if owner_agent_count >= 3:
+        raise ValueError("에이전트 슬롯은 최대 3개까지 생성할 수 있습니다.")
+
+    color = _AGENT_COLORS[owner_agent_count % len(_AGENT_COLORS)]
 
     agent_key = AgentKey(
         agent_name=agent_name,
@@ -72,7 +74,7 @@ async def verify_agent_key(api_key: str) -> AgentKey:
 
 
 async def get_agent_keys_by_owner(owner_uid: str) -> list[AgentKey]:
-    return await AgentKey.find(AgentKey.owner_uid == owner_uid).to_list()
+    return await AgentKey.find(AgentKey.owner_uid == owner_uid).sort(AgentKey.created_at).to_list()
 
 
 async def update_agent_key(
@@ -111,6 +113,12 @@ def build_agent_profile(agent_key: AgentKey) -> AgentProfile:
         persona=agent_key.persona,
         model=agent_key.model,
         avatar_url=agent_key.avatar_url,
+        gender=agent_key.gender,
+        mbti_ei=agent_key.mbti_ei,
+        mbti_sn=agent_key.mbti_sn,
+        mbti_tf=agent_key.mbti_tf,
+        mbti_jp=agent_key.mbti_jp,
+        speaking_tone=agent_key.speaking_tone,
         color=agent_key.color,
         api_key_id=agent_key.key_id,
     )
@@ -212,20 +220,23 @@ class RelationshipItem(BaseModel):
     relationship_label: str = Field(..., description="A short dynamic label (e.g. 'Ideological Conflict', 'Mutual Trust', 'Pragmatic Alliance')")
     sentiment: str = Field(..., description="Relationship tone/sentiment classification: 'positive' (friendly/trust), 'neutral' (business/uncertain), or 'negative' (conflict/distrust)")
     description: str = Field(..., description="Brief 1-2 sentence description of their current relationship based on conversation flow")
+    trigger_message_id: Optional[str] = Field(None, description="Message ID from the dialogue log that triggered or best represents this relationship state change. MUST be a valid message_id from the log.")
+    trigger_message_content: Optional[str] = Field(None, description="A short snippet of the message content that triggered this relationship state change.")
 
 class RelationshipAnalysisResponse(BaseModel):
     relationships: list[RelationshipItem]
+    agent_moods: dict[str, str] = Field(..., description="Map of agent_id to their current emotional state tag with emoji (e.g. '😡 Angry', '🤝 Cooperative', '🤔 Analytical', '🥱 Bored')")
 
 
 async def analyze_agent_relationships(
     agents: list[AgentProfile],
     history: list[Message],
-) -> list[RelationshipItem]:
+) -> Optional[RelationshipAnalysisResponse]:
     """
-    에이전트 목록과 대화 로그를 분석하여 에이전트 간의 관계 정보를 구조화하여 도출합니다.
+    에이전트 목록과 대화 로그를 분석하여 에이전트 간의 관계 정보 및 개별 감정 상태를 구조화하여 도출합니다.
     """
     if len(agents) < 2:
-        return []
+        return None
 
     # 에이전트 목록 컨텍스트
     agents_desc = "\n".join(
@@ -237,15 +248,17 @@ async def analyze_agent_relationships(
     log_lines = []
     for msg in history:
         speaker_name = agent_map.get(msg.agent_id, "Unknown/User")
-        log_lines.append(f"[{speaker_name} (ID: {msg.agent_id})]: {msg.content}")
+        log_lines.append(f"[{speaker_name} (ID: {msg.agent_id})]: {msg.content} (message_id: {msg.message_id})")
     conversation_log = "\n".join(log_lines)
 
     prompt = (
         "다음은 서로 다른 페르소나를 지닌 AI 에이전트들의 대화 로그입니다.\n"
-        "이 대화 로그를 분석하여 에이전트 쌍(Pair) 간의 친밀도(affinity, 0~100), "
-        "서로를 어떻게 정의하는지 나타내는 짧은 레이블(relationship_label, 예: 'Ideological Conflict', 'Pragmatic Alliance'), "
-        "둘 사이의 전반적인 정서 분류(sentiment: 'positive', 'neutral', 'negative' 중 택 1), "
-        "그리고 대화 내용을 토대로 그 관계의 현 상태를 상세 설명하는 한 문장(description)을 채워주세요.\n\n"
+        "이 대화 로그를 분석하여 다음 세 가지를 수행하고 결과를 JSON 스키마에 맞춰 반환하세요:\n\n"
+        "1. 에이전트 쌍(Pair) 간의 친밀도(affinity, 0~100), 짧은 레이블(relationship_label, 예: 'Ideological Conflict'), "
+        "전반적인 정서 분류(sentiment: 'positive', 'neutral', 'negative'), "
+        "그리고 관계 현 상태를 상세 설명하는 한 문장(description)을 채우세요.\n"
+        "2. 특히 두 에이전트 간의 관계 변화나 상태를 대변하는 가장 결정적인 메시지의 ID(trigger_message_id)와 발언 스니펫(trigger_message_content)을 대화 로그에서 정확히 찾아 지정하세요. (로그에 실제 존재하는 message_id 여야 합니다)\n"
+        "3. 이 채널 내에서 각 에이전트가 지닌 현재의 전반적인 감정 상태/기분(agent_moods)을 적절한 이모지를 포함해 한 단어(예: '😡 Angry', '🤝 Cooperative', '🤔 Analytical', '🥱 Bored')로 정의해 맵핑하세요.\n\n"
         f"[참여 에이전트 목록]\n{agents_desc}\n\n"
         f"[대화 로그]\n{conversation_log}\n\n"
         "결과를 반드시 JSON 스키마에 맞춰 반환하세요. agent_id는 목록에 명시된 ID를 정확히 매칭해 주어야 합니다."
@@ -264,7 +277,7 @@ async def analyze_agent_relationships(
         import json
         data = json.loads(response.text)
         result = RelationshipAnalysisResponse(**data)
-        return result.relationships
+        return result
     except Exception as e:
         print(f"[Error in analyze_agent_relationships] {e}")
-        return []
+        return None

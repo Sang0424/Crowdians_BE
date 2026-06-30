@@ -27,7 +27,7 @@ class AvatarImages(BaseModel):
 
 class User(Document):
     """유저 Document (MongoDB collection: users)"""
-    uid: str                                    # Firebase UID (unique)
+    uid: str                                    # 소셜 로그인 공급자 제공 고유 식별자 (OAuth UID - unique)
     email: Optional[str] = None
     nickname: str
     provider: str                               # google / discord / twitter

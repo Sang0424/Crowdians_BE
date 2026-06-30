@@ -17,7 +17,7 @@ class SubscriptionEvent(Document):
     renews_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
     trial_ends_at: Optional[datetime] = None
-    uid: str                        # 가입자 UID (Firebase UID)
+    uid: str                        # 가입자 UID (OAuth UID)
     
     raw_data: Dict[str, Any]        # Webhook 전체 데이터 (디버깅용)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

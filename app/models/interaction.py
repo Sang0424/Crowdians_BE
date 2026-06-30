@@ -19,8 +19,8 @@ class UserInteraction(Document):
     유저-브랜치/메시지 인터랙션 기록 (좋아요 / 스크랩 / 추천 / 비추천).
     """
     interaction_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    uid: str                        # Firebase UID
-    conversation_id: str
+    uid: str                        # OAuth UID
+    channel_id: str
     branch_id: str
     message_id: Optional[str] = None # 메시지 관련 인터랙션(추천/비추천)일 경우 설정
     interaction_type: str           # "like" | "scrap" | "upvote" | "downvote"

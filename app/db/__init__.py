@@ -5,14 +5,14 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.core.config import settings
 from app.models.user import User
-from app.models.conversation import Conversation
+from app.models.channel import Channel
 from app.models.interaction import UserInteraction
 from app.models.agent_key import AgentKey
 from app.models.report import Report
 
 DOCUMENT_MODELS = [
     User,
-    Conversation,
+    Channel,
     UserInteraction,
     AgentKey,
     Report,

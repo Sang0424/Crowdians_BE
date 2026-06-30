@@ -1,9 +1,9 @@
-# app/models/conversation.py
+# app/models/channel.py
 """
 AI Agent 간 대화 및 브랜치(분기) 모델.
 
 구조:
-  Conversation (Document)
+  Channel (Document)
     └── branches: dict[branch_id, Branch]   (해시트리 기반 O(1) 조회)
           └── messages: list[Message]
 
@@ -47,7 +47,12 @@ class AgentProfile(BaseModel):
     persona: str                        # 시스템 프롬프트 / 역할 정의
     model: str = "gemini-2.0-flash"    # 사용할 LLM 모델
     avatar_url: str = ""
-    color: str = "#7c3aed"             # UI 표시용 액센트 컬러
+    gender: str = ""
+    mbti_ei: str = ""
+    mbti_sn: str = ""
+    mbti_tf: str = ""
+    mbti_jp: str = ""
+    speaking_tone: str = ""
     api_key_id: Optional[str] = None   # 외부 에이전트 연동 시 API Key 식별자
 
 
@@ -59,6 +64,8 @@ class AgentRelationship(BaseModel):
     relationship_label: str = "Neutral"     # 요약 레이블
     sentiment: str = "neutral"              # "positive" | "neutral" | "negative"
     description: Optional[str] = None       # 상세 서사
+    trigger_message_id: Optional[str] = None
+    trigger_message_content: Optional[str] = None
     updated_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -67,6 +74,7 @@ class Message(BaseModel):
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str                       # 발화 에이전트 ID
     content: str
+    detected_emotion: str = "default"   # 감지된 감정 상태 (default, happy, sad, angry, surprised, blushed)
     created_at: datetime = Field(default_factory=_utcnow)
     branch_count: int = 0              # 이 메시지에서 파생된 분기 수
     upvotes: int = 0                   # 메시지 추천수
@@ -85,6 +93,8 @@ class Branch(BaseModel):
     intervention_type: Optional[str] = None          # "replace" | "redirect"
     intervention_content: Optional[str] = None       # 인간의 지시 내용
     intervener_uid: Optional[str] = None             # 개입한 유저 UID
+    data_opt_in: bool = False                       # RLHF 데이터셋 기여 동의 여부
+    rejected_content: Optional[str] = None          # Replace 개입 시 수정 전 원본 AI 발화
     child_branch_ids: list[str] = Field(default_factory=list)  # 하위 분기 IDs
     messages: list[Message] = Field(default_factory=list)
     likes: int = 0
@@ -100,9 +110,9 @@ class Branch(BaseModel):
 # Root Document
 # ─────────────────────────────────────────────
 
-class Conversation(Document):
+class Channel(Document):
     """
-    AI Agent 대화 세션 최상위 Document.
+    AI Agent 대화 채널 최상위 Document.
 
     branches는 dict[branch_id, Branch]로 저장하여 O(1) 조회를 지원.
     root_branch_id를 통해 트리 탐색 시작점을 알 수 있다.
@@ -111,18 +121,14 @@ class Conversation(Document):
     topic: str
     category: str = "general"                               # 마켓플레이스 분류 카테고리
     tags: list[str] = Field(default_factory=list)           # 카테고리/태그 (필터용)
-    channels: list[str] = Field(default_factory=lambda: ["general"]) # 채널 목록
     agents: list[AgentProfile] = Field(default_factory=list)
     relationships: list[AgentRelationship] = Field(default_factory=list)
-    creator_uid: Optional[str] = None                       # 대화 생성 요청 유저 UID
+    agent_moods: dict[str, str] = Field(default_factory=dict) # agent_id -> mood emoji/label
+    creator_uid: Optional[str] = None                       # 채널 생성 요청 유저 UID
     root_branch_id: str = ""
     branches: dict[str, Branch] = Field(default_factory=dict)  # branch_id → Branch
-    channel_rules: dict[str, str] = Field(default_factory=dict)
-    channel_descriptions: dict[str, str] = Field(default_factory=dict)
-    channel_privacy: dict[str, bool] = Field(default_factory=dict)
-    channel_agents: dict[str, list[str]] = Field(default_factory=dict)
     total_likes: int = 0
-    is_public: bool = False                                 # 대화 자체 공개 여부
+    is_public: bool = False                                 # 채널 공개 여부
     status: str = "active"                                  # "active" | "completed" | "archived"
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -134,4 +140,4 @@ class Conversation(Document):
         return self.branches.get(self.root_branch_id)
 
     class Settings:
-        name = "conversations"
+        name = "channels"

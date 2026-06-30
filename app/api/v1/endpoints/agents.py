@@ -12,11 +12,10 @@ from typing import Optional
 from app.core.security import CurrentUser
 from app.models.agent_key import AgentKey
 from app.services.agent_service import (
-    issue_agent_key,
     verify_agent_key,
     get_agent_keys_by_owner,
-    update_agent_key,
 )
+from app.services.signup_bootstrap import AgentProfileSeed, create_agent_key
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
@@ -26,10 +25,16 @@ router = APIRouter(prefix="/agents", tags=["Agents"])
 # ─────────────────────────────────────────────
 
 class CreateAgentRequest(BaseModel):
-    agent_name: str
-    persona: str
+    agent_name: Optional[str] = None
+    persona: Optional[str] = None
     model: str = "gemini-2.0-flash"
     avatar_url: str = ""
+    gender: Optional[str] = None
+    mbti_ei: Optional[str] = None
+    mbti_sn: Optional[str] = None
+    mbti_tf: Optional[str] = None
+    mbti_jp: Optional[str] = None
+    speaking_tone: Optional[str] = None
 
 
 class UpdateAgentRequest(BaseModel):
@@ -37,6 +42,12 @@ class UpdateAgentRequest(BaseModel):
     persona: Optional[str] = None
     model: Optional[str] = None
     avatar_url: Optional[str] = None
+    gender: Optional[str] = None
+    mbti_ei: Optional[str] = None
+    mbti_sn: Optional[str] = None
+    mbti_tf: Optional[str] = None
+    mbti_jp: Optional[str] = None
+    speaking_tone: Optional[str] = None
 
 
 class AgentKeyResponse(BaseModel):
@@ -46,6 +57,12 @@ class AgentKeyResponse(BaseModel):
     model: str
     avatar_url: str
     color: str
+    gender: str
+    mbti_ei: str
+    mbti_sn: str
+    mbti_tf: str
+    mbti_jp: str
+    speaking_tone: str
     api_key: str                # 발급 시에만 노출, 이후 조회 시 마스킹
     is_active: bool
     created_at: datetime
@@ -59,6 +76,12 @@ class AgentKeySummary(BaseModel):
     model: str
     avatar_url: str
     color: str
+    gender: str
+    mbti_ei: str
+    mbti_sn: str
+    mbti_tf: str
+    mbti_jp: str
+    speaking_tone: str
     api_key_masked: str         # "cwd_****...****"
     is_active: bool
     created_at: datetime
@@ -80,14 +103,24 @@ async def create_agent(
     body: CreateAgentRequest,
     current_user: CurrentUser,
 ):
-    """에이전트를 등록하고 API Key를 발급합니다. Key는 최초 1회만 전체 노출."""
-    agent = await issue_agent_key(
-        agent_name=body.agent_name,
-        persona=body.persona,
-        owner_uid=current_user.uid,
-        model=body.model,
-        avatar_url=body.avatar_url,
-    )
+    try:
+        agent = await create_agent_key(
+            owner_uid=current_user.uid,
+            seed=AgentProfileSeed(
+                agent_name=body.agent_name,
+                persona=body.persona,
+                model=body.model,
+                avatar_url=body.avatar_url,
+                gender=body.gender,
+                mbti_ei=body.mbti_ei,
+                mbti_sn=body.mbti_sn,
+                mbti_tf=body.mbti_tf,
+                mbti_jp=body.mbti_jp,
+                speaking_tone=body.speaking_tone,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     return AgentKeyResponse(
         key_id=agent.key_id,
         agent_name=agent.agent_name,
@@ -95,7 +128,13 @@ async def create_agent(
         model=agent.model,
         avatar_url=agent.avatar_url,
         color=agent.color,
-        api_key=agent.api_key,    # 최초 1회만 전체 공개
+        gender=agent.gender,
+        mbti_ei=agent.mbti_ei,
+        mbti_sn=agent.mbti_sn,
+        mbti_tf=agent.mbti_tf,
+        mbti_jp=agent.mbti_jp,
+        speaking_tone=agent.speaking_tone,
+        api_key=agent.api_key,
         is_active=agent.is_active,
         created_at=agent.created_at,
         last_used_at=agent.last_used_at,
@@ -113,6 +152,12 @@ async def list_my_agents(current_user: CurrentUser):
             model=a.model,
             avatar_url=a.avatar_url,
             color=a.color,
+            gender=a.gender,
+            mbti_ei=a.mbti_ei,
+            mbti_sn=a.mbti_sn,
+            mbti_tf=a.mbti_tf,
+            mbti_jp=a.mbti_jp,
+            speaking_tone=a.speaking_tone,
             api_key_masked=f"{a.api_key[:8]}...{a.api_key[-4:]}",
             is_active=a.is_active,
             created_at=a.created_at,
@@ -128,14 +173,35 @@ async def update_agent(
     body: UpdateAgentRequest,
     current_user: CurrentUser,
 ):
-    agent = await update_agent_key(
-        key_id=key_id,
-        owner_uid=current_user.uid,
-        agent_name=body.agent_name,
-        persona=body.persona,
-        model=body.model,
-        avatar_url=body.avatar_url,
+    agent = await AgentKey.find_one(
+        AgentKey.key_id == key_id,
+        AgentKey.owner_uid == current_user.uid,
     )
+    if not agent:
+        raise HTTPException(status_code=404, detail="에이전트를 찾을 수 없습니다.")
+
+    if body.agent_name is not None:
+        agent.agent_name = body.agent_name
+    if body.persona is not None:
+        agent.persona = body.persona
+    if body.model is not None:
+        agent.model = body.model
+    if body.avatar_url is not None:
+        agent.avatar_url = body.avatar_url
+    if body.gender is not None:
+        agent.gender = body.gender
+    if body.mbti_ei is not None:
+        agent.mbti_ei = body.mbti_ei
+    if body.mbti_sn is not None:
+        agent.mbti_sn = body.mbti_sn
+    if body.mbti_tf is not None:
+        agent.mbti_tf = body.mbti_tf
+    if body.mbti_jp is not None:
+        agent.mbti_jp = body.mbti_jp
+    if body.speaking_tone is not None:
+        agent.speaking_tone = body.speaking_tone
+
+    await agent.save()
     return AgentKeySummary(
         key_id=agent.key_id,
         agent_name=agent.agent_name,
@@ -143,6 +209,12 @@ async def update_agent(
         model=agent.model,
         avatar_url=agent.avatar_url,
         color=agent.color,
+        gender=agent.gender,
+        mbti_ei=agent.mbti_ei,
+        mbti_sn=agent.mbti_sn,
+        mbti_tf=agent.mbti_tf,
+        mbti_jp=agent.mbti_jp,
+        speaking_tone=agent.speaking_tone,
         api_key_masked=f"{agent.api_key[:8]}...{agent.api_key[-4:]}",
         is_active=agent.is_active,
         created_at=agent.created_at,

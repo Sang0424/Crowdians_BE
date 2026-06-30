@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.core.security import CurrentUser
@@ -10,10 +11,11 @@ from app.schemas.auth import (
     RefreshRequest,
     RefreshResponse,
     UserResponse,
+    VerifyAdultRequest,
+    OnboardRequest,
 )
 from app.api.v1.utils import user_to_response
 from app.services.auth_service import (
-    verify_firebase_token,
     verify_internal_api_key,
     get_or_create_user,
     generate_access_token,
@@ -26,6 +28,14 @@ from app.services.auth_service import (
 router = APIRouter()
 
 
+def _is_under_14(b_date: datetime) -> bool:
+    now = datetime.now(timezone.utc)
+    if b_date.tzinfo is None:
+        b_date = b_date.replace(tzinfo=timezone.utc)
+    age = now.year - b_date.year
+    if (now.month, now.day) < (b_date.month, b_date.day):
+        age -= 1
+    return age < 14
 
 
 # ══════════════════════════════════════
@@ -36,65 +46,52 @@ router = APIRouter()
     "/auth/login",
     response_model=LoginResponse,
     summary="소셜 로그인 / 자동 회원가입",
-    description="Firebase ID Token 또는 서버 간 신뢰 기반으로 로그인을 처리합니다.",
+    description="서버 간 신뢰 기반으로 로그인을 처리합니다.",
 )
 async def login(
     request: LoginRequest,
     x_internal_api_key: str | None = Header(None),
 ):
-    # ── 흐름 A: NextAuth → 백엔드 (서버 간 신뢰) ──
-    if x_internal_api_key is not None:
-        try:
-            verify_internal_api_key(x_internal_api_key)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=str(e),
-            )
+    # ── NextAuth → 백엔드 (서버 간 신뢰) ──
+    try:
+        verify_internal_api_key(x_internal_api_key)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
 
-        if not request.providerAccountId:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="providerAccountId가 필요합니다.",
-            )
+    if not request.providerAccountId:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="providerAccountId가 필요합니다.",
+        )
 
-        # provider:providerAccountId 조합으로 고유한 uid 생성
-        uid = f"{request.provider}:{request.providerAccountId}"
-        email = request.email
-        nickname = None
-
-    # ── 흐름 B: 모바일 등 (Firebase ID Token 검증) ──
-    else:
-        if not request.idToken:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="idToken이 필요합니다.",
-            )
-
-        try:
-            decoded = await verify_firebase_token(request.idToken)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=str(e),
-            )
-
-        uid = decoded.get("uid")
-        if not uid:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Firebase 토큰에서 UID를 찾을 수 없습니다.",
-            )
-        email = decoded.get("email")
-        nickname = None
+    # provider:providerAccountId 조합으로 고유한 uid 생성
+    uid = f"{request.provider}:{request.providerAccountId}"
+    email = request.email
+    nickname = None
 
     # ── 공통: 유저 조회/생성 → 자체 토큰 발급 ──
+    if request.birthdate and _is_under_14(request.birthdate):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ERROR_UNDER_AGE_LIMIT",
+        )
+
     user, is_new_user = await get_or_create_user(
         uid=uid,
         email=email,
         nickname=nickname,
         provider=request.provider,
+        birthdate=request.birthdate,
     )
+
+    if user.birthdate and _is_under_14(user.birthdate):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ERROR_UNDER_AGE_LIMIT",
+        )
 
     access_token = generate_access_token(uid)
     refresh_token = generate_refresh_token(uid)
@@ -204,3 +201,83 @@ async def update_nickname(
 #     current_user: CurrentUser,
 # ):
 #     return user_to_response(current_user)
+
+
+# ══════════════════════════════════════
+# POST /auth/verify-adult — 성인 인증 API
+# ══════════════════════════════════════
+
+@router.post(
+    "/auth/verify-adult",
+    response_model=UserResponse,
+    summary="성인 인증",
+    description="다날/Stripe 연동 결과를 시뮬레이션하여 성인 인증을 처리합니다.",
+)
+async def verify_adult(
+    request: VerifyAdultRequest,
+    current_user: CurrentUser,
+):
+    # provider에 따라 다날/Stripe 연동 결과 시뮬레이션
+    # auth_token이 'fail', 'invalid', 'error'인 경우 실패 처리
+    if not request.auth_token or request.auth_token.lower() in ("fail", "invalid", "error"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="성인 인증에 실패했습니다. 유효하지 않은 인증 토큰입니다.",
+        )
+
+    # 성공 시 유저 성인 상태 갱신
+    current_user.is_adult = True
+    current_user.adult_verified_at = datetime.now(timezone.utc)
+    await current_user.save()
+
+    return user_to_response(current_user)
+
+
+# ══════════════════════════════════════
+# PATCH /users/me/onboard — 온보딩 정보 갱신
+# ══════════════════════════════════════
+
+@router.patch(
+    "/users/me/onboard",
+    response_model=UserResponse,
+    summary="온보딩 정보 갱신",
+    description="닉네임, 생년월일, NSFW 필터를 설정하며 만 14세 미만인 경우 차단합니다.",
+)
+async def onboard_user(
+    request: OnboardRequest,
+    current_user: CurrentUser,
+):
+    # 만 나이 검증
+    if _is_under_14(request.birthdate):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ERROR_UNDER_AGE_LIMIT",
+        )
+
+    # 닉네임 유효성 검사 (입력된 경우)
+    if request.nickname:
+        reserved = {"크라우디언", "크라우디언즈", "Crowdians", "crowdians", "Crowdian", "crowdian"}
+        if request.nickname in reserved:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="사용할 수 없는 닉네임입니다.",
+            )
+        existing = await User.find_one(
+            User.nickname == request.nickname,
+            User.uid != current_user.uid,
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="이미 사용 중인 닉네임입니다.",
+            )
+        current_user.nickname = request.nickname
+
+    current_user.birthdate = request.birthdate
+    if request.nsfw_filter is not None:
+        current_user.nsfw_filter = request.nsfw_filter
+
+    current_user.stats.isOnboardingDone = True
+
+    await current_user.save()
+    return user_to_response(current_user)

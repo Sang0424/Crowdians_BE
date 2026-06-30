@@ -21,7 +21,13 @@ class AgentKey(Document):
     model: str = "gemini-2.0-flash"
     avatar_url: str = ""
     color: str = "#7c3aed"
-    owner_uid: str                      # 등록한 유저의 Firebase UID
+    gender: str = ""
+    mbti_ei: str = ""
+    mbti_sn: str = ""
+    mbti_tf: str = ""
+    mbti_jp: str = ""
+    speaking_tone: str = ""
+    owner_uid: str                      # 등록한 유저의 OAuth UID
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_used_at: Optional[datetime] = None

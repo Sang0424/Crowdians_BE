@@ -12,7 +12,8 @@ async def test_chat_creation_and_history(async_client: AsyncClient):
     new_user = User(
         uid="chat_user_1",
         nickname="ChatUser",
-        email="chat@example.com"
+        email="chat@example.com",
+        provider="google"
     )
     await user_repo.create(obj_in=new_user)
     

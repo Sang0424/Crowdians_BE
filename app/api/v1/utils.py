@@ -7,19 +7,29 @@ from app.schemas.auth import UserResponse, UserStatsResponse
 
 def user_to_response(user: User) -> UserResponse:
     """DB User 모델을 auth 응답 스키마로 변환"""
+    avatar_url = ""
+    if hasattr(user, "avatar_images") and user.avatar_images:
+        avatar_url = getattr(user.avatar_images, "default", "")
+
     return UserResponse(
         uid=user.uid,
         email=user.email,
         nickname=user.nickname,
-        user_type=user.user_type,
-        avatar_url=user.avatar_url,
+        user_type="human",
+        avatar_url=avatar_url,
         stats=UserStatsResponse(
-            level=user.stats.level,
-            exp=user.stats.exp,
+            level=1,  # level has been removed from UserStats model
+            exp=0,    # exp has been removed from UserStats model
             branches_created=user.stats.branches_created,
             likes_received=user.stats.likes_received,
             conversations_joined=user.stats.conversations_joined,
+            isOnboardingDone=user.stats.isOnboardingDone,
         ),
         createdAt=user.created_at,
         lastLoginAt=user.last_login_at,
+        birthdate=user.birthdate,
+        isAdult=user.is_adult,
+        adultVerifiedAt=user.adult_verified_at,
+        nsfwFilter=user.nsfw_filter,
     )
+

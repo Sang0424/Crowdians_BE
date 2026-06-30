@@ -1,6 +1,6 @@
-# app/services/conversation_service.py
+# app/services/channel_service.py
 """
-대화(Conversation) 및 분기(Branch) 핵심 비즈니스 로직.
+채널(Channel) 및 분기(Branch) 핵심 비즈니스 로직.
 """
 
 import math
@@ -8,9 +8,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.models.conversation import (
+from app.models.channel import (
     Branch,
-    Conversation,
+    Channel,
     Message,
     AgentProfile,
     generate_branch_id,
@@ -30,17 +30,17 @@ def _utcnow() -> datetime:
 
 
 # ─────────────────────────────────────────────
-# Conversation CRUD
+# Channel CRUD
 # ─────────────────────────────────────────────
 
-async def create_conversation(
+async def create_channel(
     title: str,
     topic: str,
     tags: list[str],
     agents: list[AgentProfile],
     creator_uid: Optional[str] = None,
-) -> Conversation:
-    """새 대화 세션 생성 (root branch 포함)."""
+) -> Channel:
+    """새 채널 생성 (root branch 포함)."""
     root_branch_id = generate_branch_id(None, None, None)
     root_branch = Branch(
         branch_id=root_branch_id,
@@ -48,28 +48,27 @@ async def create_conversation(
         depth=0,
     )
 
-    conv = Conversation(
+    channel = Channel(
         title=title,
         topic=topic,
         tags=tags,
-        channels=["general"],
         agents=agents,
         creator_uid=creator_uid,
         root_branch_id=root_branch_id,
         branches={root_branch_id: root_branch},
     )
-    await conv.insert()
-    return conv
+    await channel.insert()
+    return channel
 
 
-async def list_conversations(
+async def list_channels(
     tags: Optional[list[str]] = None,
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 20,
-) -> list[Conversation]:
-    """대화 목록 조회 (태그 필터, 검색어 지원)."""
-    query = Conversation.find(Conversation.status == "active")
+) -> list[Channel]:
+    """채널 목록 조회 (태그 필터, 검색어 지원)."""
+    query = Channel.find(Channel.status == "active")
 
     if tags:
         query = query.find({"tags": {"$in": tags}})
@@ -79,11 +78,11 @@ async def list_conversations(
             {"topic": {"$regex": search, "$options": "i"}},
         ]})
 
-    return await query.sort(-Conversation.created_at).skip(skip).limit(limit).to_list()
+    return await query.sort(-Channel.created_at).skip(skip).limit(limit).to_list()
 
 
-async def get_conversation(conversation_id: str) -> Optional[Conversation]:
-    return await Conversation.get(conversation_id)
+async def get_channel(channel_id: str) -> Optional[Channel]:
+    return await Channel.get(channel_id)
 
 
 # ─────────────────────────────────────────────
@@ -91,38 +90,42 @@ async def get_conversation(conversation_id: str) -> Optional[Conversation]:
 # ─────────────────────────────────────────────
 
 async def create_branch(
-    conversation_id: str,
+    channel_id: str,
     parent_branch_id: str,
     fork_message_id: str,
     intervention_type: str,      # "replace" | "redirect"
     intervention_content: str,
     intervener_uid: str,
     channel_name: str = "general",
-) -> tuple[Conversation, Branch]:
+    data_opt_in: bool = False,
+) -> tuple[Channel, Branch]:
     """
     특정 메시지 지점에서 새 분기를 생성합니다.
 
-    1. fork_message_id 이전 메시지를 복사
-    2. 새 branch_id 해시 생성
-    3. Conversation.branches dict에 추가
-    4. 부모 브랜치의 해당 메시지에 branch_count +1
-    5. 부모 브랜치 child_branch_ids 업데이트
+    - replace 개입: fork_message_id를 제외한 이전 메시지 복사, 원본 발화를 rejected_content에 저장
+    - redirect 개입: fork_message_id를 포함한 이전 메시지 전체 복사 (대화 연장 지원)
     """
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        raise ValueError("대화를 찾을 수 없습니다.")
+    channel = await Channel.get(channel_id)
+    if not channel:
+        raise ValueError("채널을 찾을 수 없습니다.")
 
-    parent_branch = conv.branches.get(parent_branch_id)
+    parent_branch = channel.branches.get(parent_branch_id)
     if not parent_branch:
         raise ValueError("부모 분기를 찾을 수 없습니다.")
 
-    # fork 지점 이전 메시지 복사
     messages_before_fork: list[Message] = []
+    rejected_content: Optional[str] = None
+
     for msg in parent_branch.messages:
         if msg.message_id == fork_message_id:
-            # branch_count 증가
             msg.branch_count += 1
-            break
+            if intervention_type == "replace":
+                rejected_content = msg.content
+                break
+            else:
+                # redirect 개입인 경우 fork 지점 메시지 자체도 새 분기에 그대로 포함함
+                messages_before_fork.append(msg)
+                break
         messages_before_fork.append(msg)
 
     new_branch_id = generate_branch_id(
@@ -137,6 +140,8 @@ async def create_branch(
         intervention_type=intervention_type,
         intervention_content=intervention_content,
         intervener_uid=intervener_uid,
+        data_opt_in=data_opt_in,
+        rejected_content=rejected_content,
         messages=messages_before_fork,
         depth=parent_branch.depth + 1,
     )
@@ -145,9 +150,9 @@ async def create_branch(
     parent_branch.child_branch_ids.append(new_branch_id)
 
     # dict 업데이트 (Beanie는 embedded dict 변경 시 명시적 저장 필요)
-    conv.branches[new_branch_id] = new_branch
-    conv.updated_at = _utcnow()
-    await conv.save()
+    channel.branches[new_branch_id] = new_branch
+    channel.updated_at = _utcnow()
+    await channel.save()
 
     # 개입한 유저 stats 업데이트
     user = await User.find_one(User.uid == intervener_uid)
@@ -155,33 +160,33 @@ async def create_branch(
         user.stats.branches_created += 1
         await user.save()
 
-    return conv, new_branch
+    return channel, new_branch
 
 
 async def add_message_to_branch(
-    conversation_id: str,
+    channel_id: str,
     branch_id: str,
     message: Message,
-) -> Conversation:
+) -> Channel:
     """분기에 새 메시지를 추가합니다."""
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        raise ValueError("대화를 찾을 수 없습니다.")
+    channel = await Channel.get(channel_id)
+    if not channel:
+        raise ValueError("채널을 찾을 수 없습니다.")
 
-    branch = conv.branches.get(branch_id)
+    branch = channel.branches.get(branch_id)
     if not branch:
         raise ValueError("분기를 찾을 수 없습니다.")
 
     branch.messages.append(message)
-    conv.updated_at = _utcnow()
-    await conv.save()
+    channel.updated_at = _utcnow()
+    await channel.save()
 
     # 10턴마다 비동기로 에이전트 간의 관계 업데이트
     if len(branch.messages) % 10 == 0:
         import asyncio
-        asyncio.create_task(update_agent_relationships_task(conversation_id, branch_id))
+        asyncio.create_task(update_agent_relationships_task(channel_id, branch_id))
 
-    return conv
+    return channel
 
 
 # ─────────────────────────────────────────────
@@ -190,15 +195,15 @@ async def add_message_to_branch(
 
 async def toggle_like(
     uid: str,
-    conversation_id: str,
+    channel_id: str,
     branch_id: str,
 ) -> dict:
     """좋아요 토글. 반환: {liked: bool, count: int}"""
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        raise ValueError("대화를 찾을 수 없습니다.")
+    channel = await Channel.get(channel_id)
+    if not channel:
+        raise ValueError("채널을 찾을 수 없습니다.")
 
-    branch = conv.branches.get(branch_id)
+    branch = channel.branches.get(branch_id)
     if not branch:
         raise ValueError("분기를 찾을 수 없습니다.")
 
@@ -208,7 +213,7 @@ async def toggle_like(
 
     existing = await UserInteraction.find_one(
         UserInteraction.uid == uid,
-        UserInteraction.conversation_id == conversation_id,
+        UserInteraction.channel_id == channel_id,
         UserInteraction.branch_id == branch_id,
         UserInteraction.interaction_type == INTERACTION_LIKE,
     )
@@ -217,7 +222,7 @@ async def toggle_like(
         # 좋아요 취소
         await existing.delete()
         branch.likes = max(0, branch.likes - 1)
-        conv.total_likes = max(0, conv.total_likes - 1)
+        channel.total_likes = max(0, channel.total_likes - 1)
         if branch_id in user.liked_branches:
             user.liked_branches.remove(branch_id)
         liked = False
@@ -232,13 +237,13 @@ async def toggle_like(
         # 좋아요 추가
         interaction = UserInteraction(
             uid=uid,
-            conversation_id=conversation_id,
+            channel_id=channel_id,
             branch_id=branch_id,
             interaction_type=INTERACTION_LIKE,
         )
         await interaction.insert()
         branch.likes += 1
-        conv.total_likes += 1
+        channel.total_likes += 1
         user.liked_branches.append(branch_id)
         liked = True
 
@@ -248,8 +253,8 @@ async def toggle_like(
                 intervener.stats.likes_received += 1
                 await intervener.save()
 
-    conv.updated_at = _utcnow()
-    await conv.save()
+    channel.updated_at = _utcnow()
+    await channel.save()
     await user.save()
 
     return {"liked": liked, "count": branch.likes}
@@ -257,15 +262,15 @@ async def toggle_like(
 
 async def toggle_scrap(
     uid: str,
-    conversation_id: str,
+    channel_id: str,
     branch_id: str,
 ) -> dict:
     """스크랩 토글. 반환: {scrapped: bool, count: int}"""
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        raise ValueError("대화를 찾을 수 없습니다.")
+    channel = await Channel.get(channel_id)
+    if not channel:
+        raise ValueError("채널을 찾을 수 없습니다.")
 
-    branch = conv.branches.get(branch_id)
+    branch = channel.branches.get(branch_id)
     if not branch:
         raise ValueError("분기를 찾을 수 없습니다.")
 
@@ -275,7 +280,7 @@ async def toggle_scrap(
 
     existing = await UserInteraction.find_one(
         UserInteraction.uid == uid,
-        UserInteraction.conversation_id == conversation_id,
+        UserInteraction.channel_id == channel_id,
         UserInteraction.branch_id == branch_id,
         UserInteraction.interaction_type == INTERACTION_SCRAP,
     )
@@ -289,7 +294,7 @@ async def toggle_scrap(
     else:
         interaction = UserInteraction(
             uid=uid,
-            conversation_id=conversation_id,
+            channel_id=channel_id,
             branch_id=branch_id,
             interaction_type=INTERACTION_SCRAP,
         )
@@ -298,8 +303,8 @@ async def toggle_scrap(
         user.scrapped_branches.append(branch_id)
         scrapped = True
 
-    conv.updated_at = _utcnow()
-    await conv.save()
+    channel.updated_at = _utcnow()
+    await channel.save()
     await user.save()
 
     return {"scrapped": scrapped, "count": branch.scraps}
@@ -309,12 +314,12 @@ async def toggle_scrap(
 # Branch Tree Serialization
 # ─────────────────────────────────────────────
 
-def serialize_branch_tree(conv: Conversation) -> dict:
+def serialize_branch_tree(channel: Channel) -> dict:
     """
     해시트리를 프론트엔드가 렌더링하기 좋은 트리 형태로 직렬화합니다.
     """
     def _build_node(branch_id: str) -> Optional[dict]:
-        branch = conv.branches.get(branch_id)
+        branch = channel.branches.get(branch_id)
         if not branch:
             return None
         return {
@@ -336,59 +341,12 @@ def serialize_branch_tree(conv: Conversation) -> dict:
             ],
         }
 
-    return _build_node(conv.root_branch_id) or {}
-
-
-async def add_channel(
-    conversation_id: str,
-    channel_name: str,
-    description: str = "",
-    rules: str = "",
-    is_private: bool = False,
-    invited_agent_ids: list[str] = None
-) -> Conversation:
-    """대화방(서버) 내 새로운 채널 등록 및 해당 채널의 루트 브랜치 생성."""
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        raise ValueError("대화를 찾을 수 없습니다.")
-
-    if channel_name not in conv.channels:
-        conv.channels.append(channel_name)
-
-    # 해당 채널용 루트 브랜치 생성
-    has_branch = any(b.channel_name == channel_name and b.parent_branch_id is None for b in conv.branches.values())
-    if not has_branch:
-        root_branch_id = generate_branch_id(None, None, channel_name)
-        root_branch = Branch(
-            branch_id=root_branch_id,
-            channel_name=channel_name,
-            depth=0,
-        )
-        conv.branches[root_branch_id] = root_branch
-
-    # 추가 메타데이터 정보 저장
-    if conv.channel_rules is None:
-        conv.channel_rules = {}
-    if conv.channel_descriptions is None:
-        conv.channel_descriptions = {}
-    if conv.channel_privacy is None:
-        conv.channel_privacy = {}
-    if conv.channel_agents is None:
-        conv.channel_agents = {}
-
-    conv.channel_rules[channel_name] = rules
-    conv.channel_descriptions[channel_name] = description
-    conv.channel_privacy[channel_name] = is_private
-    conv.channel_agents[channel_name] = invited_agent_ids or []
-
-    conv.updated_at = _utcnow()
-    await conv.save()
-    return conv
+    return _build_node(channel.root_branch_id) or {}
 
 
 async def toggle_message_vote(
     uid: str,
-    conversation_id: str,
+    channel_id: str,
     branch_id: str,
     message_id: str,
     vote_type: str,
@@ -397,11 +355,11 @@ async def toggle_message_vote(
     if vote_type not in (INTERACTION_UPVOTE, INTERACTION_DOWNVOTE):
         raise ValueError("Invalid vote type")
 
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        raise ValueError("Conversation not found")
+    channel = await Channel.get(channel_id)
+    if not channel:
+        raise ValueError("Channel not found")
 
-    branch = conv.branches.get(branch_id)
+    branch = channel.branches.get(branch_id)
     if not branch:
         raise ValueError("Branch not found")
 
@@ -412,7 +370,7 @@ async def toggle_message_vote(
     # 기존 투표 조회 (upvote 또는 downvote)
     existing = await UserInteraction.find_one(
         UserInteraction.uid == uid,
-        UserInteraction.conversation_id == conversation_id,
+        UserInteraction.channel_id == channel_id,
         UserInteraction.branch_id == branch_id,
         UserInteraction.message_id == message_id,
         {"interaction_type": {"$in": [INTERACTION_UPVOTE, INTERACTION_DOWNVOTE]}},
@@ -442,7 +400,7 @@ async def toggle_message_vote(
         # 투표 신규 등록
         interaction = UserInteraction(
             uid=uid,
-            conversation_id=conversation_id,
+            channel_id=channel_id,
             branch_id=branch_id,
             message_id=message_id,
             interaction_type=vote_type,
@@ -454,8 +412,8 @@ async def toggle_message_vote(
             message.downvotes += 1
         user_vote = vote_type
 
-    conv.updated_at = _utcnow()
-    await conv.save()
+    channel.updated_at = _utcnow()
+    await channel.save()
 
     return {
         "success": True,
@@ -466,18 +424,18 @@ async def toggle_message_vote(
 
 
 async def calculate_channel_preference_score(
-    conversation_id: str,
+    channel_id: str,
     channel_name: str,
 ) -> dict:
     """
     채널 내의 모든 브랜치와 메시지의 인터랙션을 취합하고 시간 감쇠(Time Decay)를 고려해 채널 선호도 점수를 계산합니다.
     """
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        raise ValueError("Conversation not found")
+    channel = await Channel.get(channel_id)
+    if not channel:
+        raise ValueError("Channel not found")
 
     channel_branches = [
-        b for b in conv.branches.values() if b.channel_name == channel_name
+        b for b in channel.branches.values() if b.channel_name == channel_name
     ]
 
     w_branch = 5.0
@@ -545,43 +503,36 @@ async def calculate_channel_preference_score(
     }
 
 
-async def update_agent_relationships_task(conversation_id: str, branch_id: str):
+async def update_agent_relationships_task(channel_id: str, branch_id: str):
     """
     비동기 백그라운드 태스크: 대화 로그를 기반으로 에이전트 간 관계를 추론하여 갱신합니다.
     """
     from app.services import agent_service
-    from app.models.conversation import AgentRelationship
+    from app.models.channel import AgentRelationship
 
-    conv = await Conversation.get(conversation_id)
-    if not conv:
-        print(f"[update_agent_relationships_task] Conversation {conversation_id} not found.")
+    channel = await Channel.get(channel_id)
+    if not channel:
+        print(f"[update_agent_relationships_task] Channel {channel_id} not found.")
         return
 
-    branch = conv.branches.get(branch_id)
+    branch = channel.branches.get(branch_id)
     if not branch:
         print(f"[update_agent_relationships_task] Branch {branch_id} not found.")
         return
-
-    # 현재 채널의 활성화된 에이전트
-    channel_agents_ids = (conv.channel_agents or {}).get(branch.channel_name, [])
-    if channel_agents_ids:
-        active_agents = [a for a in conv.agents if a.agent_id in channel_agents_ids]
-    else:
-        active_agents = conv.agents
 
     # 대화 히스토리
     history = branch.messages
 
     # LLM 분석 실행 (Gemini Structured Outputs)
-    analyzed_items = await agent_service.analyze_agent_relationships(active_agents, history)
-    if not analyzed_items:
+    analysis_result = await agent_service.analyze_agent_relationships(channel.agents, history)
+    if not analysis_result:
         print("[update_agent_relationships_task] No relationship updates derived.")
         return
 
     # 기존 관계를 딕셔너리로 관리하여 갱신
-    existing_rels = {f"{r.agent_id_a}-{r.agent_id_b}": r for r in getattr(conv, "relationships", []) or []}
+    existing_rels = {f"{r.agent_id_a}-{r.agent_id_b}": r for r in getattr(channel, "relationships", []) or []}
 
-    for item in analyzed_items:
+    for item in analysis_result.relationships:
         # 순서 정렬하여 유니크 키 보장 (단방향 쌍 저장)
         sorted_ids = sorted([item.agent_id_a, item.agent_id_b])
         key = f"{sorted_ids[0]}-{sorted_ids[1]}"
@@ -593,10 +544,20 @@ async def update_agent_relationships_task(conversation_id: str, branch_id: str):
             relationship_label=item.relationship_label,
             sentiment=item.sentiment,
             description=item.description,
+            trigger_message_id=item.trigger_message_id,
+            trigger_message_content=item.trigger_message_content,
             updated_at=_utcnow()
         )
 
-    conv.relationships = list(existing_rels.values())
-    conv.updated_at = _utcnow()
-    await conv.save()
-    print(f"[update_agent_relationships_task] Successfully updated relationships for Conversation {conversation_id}")
+    channel.relationships = list(existing_rels.values())
+
+    # 개별 에이전트 감정 상태(Mood) 갱신
+    if getattr(channel, "agent_moods", None) is None:
+        channel.agent_moods = {}
+
+    for agent_id, mood in analysis_result.agent_moods.items():
+        channel.agent_moods[agent_id] = mood
+
+    channel.updated_at = _utcnow()
+    await channel.save()
+    print(f"[update_agent_relationships_task] Successfully updated relationships for Channel {channel_id}")

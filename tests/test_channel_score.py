@@ -1,8 +1,8 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 from app.models.user import User
-from app.models.conversation import Conversation, AgentProfile, Message
-from app.services import conversation_service
+from app.models.channel import Channel, AgentProfile, Message
+from app.services import channel_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -16,9 +16,9 @@ async def test_channel_score_and_voting():
     )
     await user.insert()
 
-    # 2. Create a conversation
+    # 2. Create a channel
     agent1 = AgentProfile(agent_id="agent-1", name="Agent A", persona="Persona A")
-    conv = await conversation_service.create_conversation(
+    conv = await channel_service.create_channel(
         title="Score Test Conversation",
         topic="Resource Allocation",
         tags=["test"],
@@ -37,20 +37,20 @@ async def test_channel_score_and_voting():
         agent_id="agent-1",
         content="Let's buy a magic shield!"
     )
-    await conversation_service.add_message_to_branch(
-        conversation_id=str(conv.id),
+    await channel_service.add_message_to_branch(
+        channel_id=str(conv.id),
         branch_id=root_branch_id,
         message=msg1
     )
     
     # Verify message was added
-    conv = await conversation_service.get_conversation(str(conv.id))
+    conv = await channel_service.get_channel(str(conv.id))
     assert len(conv.branches[root_branch_id].messages) == 1
     
     # 4. Perform voting on message
-    vote_res = await conversation_service.toggle_message_vote(
+    vote_res = await channel_service.toggle_message_vote(
         uid="test_user_score",
-        conversation_id=str(conv.id),
+        channel_id=str(conv.id),
         branch_id=root_branch_id,
         message_id="msg-test-1",
         vote_type="upvote"
@@ -60,9 +60,9 @@ async def test_channel_score_and_voting():
     assert vote_res["user_vote"] == "upvote"
     
     # Toggle off (second click)
-    vote_res_off = await conversation_service.toggle_message_vote(
+    vote_res_off = await channel_service.toggle_message_vote(
         uid="test_user_score",
-        conversation_id=str(conv.id),
+        channel_id=str(conv.id),
         branch_id=root_branch_id,
         message_id="msg-test-1",
         vote_type="upvote"
@@ -71,17 +71,17 @@ async def test_channel_score_and_voting():
     assert vote_res_off["user_vote"] is None
 
     # Vote again to keep score > 0
-    await conversation_service.toggle_message_vote(
+    await channel_service.toggle_message_vote(
         uid="test_user_score",
-        conversation_id=str(conv.id),
+        channel_id=str(conv.id),
         branch_id=root_branch_id,
         message_id="msg-test-1",
         vote_type="upvote"
     )
     
     # 5. Add a sub branch (Channel: 'strategy')
-    conv, sub_branch = await conversation_service.create_branch(
-        conversation_id=str(conv.id),
+    conv, sub_branch = await channel_service.create_branch(
+        channel_id=str(conv.id),
         parent_branch_id=root_branch_id,
         fork_message_id="msg-test-1",
         intervention_type="redirect",
@@ -91,16 +91,16 @@ async def test_channel_score_and_voting():
     )
     
     # Perform like on sub branch
-    like_res = await conversation_service.toggle_like(
+    like_res = await channel_service.toggle_like(
         uid="test_user_score",
-        conversation_id=str(conv.id),
+        channel_id=str(conv.id),
         branch_id=sub_branch.branch_id
     )
     assert like_res["count"] == 1
     
     # 6. Calculate Preference Score for 'general' channel
-    general_score_res = await conversation_service.calculate_channel_preference_score(
-        conversation_id=str(conv.id),
+    general_score_res = await channel_service.calculate_channel_preference_score(
+        channel_id=str(conv.id),
         channel_name="general"
     )
     assert general_score_res["channel_name"] == "general"
@@ -108,8 +108,8 @@ async def test_channel_score_and_voting():
     assert general_score_res["metrics"]["total_upvotes"] == 1
     
     # 7. Calculate Preference Score for 'strategy' channel
-    strategy_score_res = await conversation_service.calculate_channel_preference_score(
-        conversation_id=str(conv.id),
+    strategy_score_res = await channel_service.calculate_channel_preference_score(
+        channel_id=str(conv.id),
         channel_name="strategy"
     )
     assert strategy_score_res["channel_name"] == "strategy"

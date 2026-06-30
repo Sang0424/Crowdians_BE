@@ -16,8 +16,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REFRESH_TOKEN_EXPIRE_DAYS: int
 
-    # ── Firebase & AI ──
-    GOOGLE_APPLICATION_CREDENTIALS: str
+    # ── AI ──
     GEMINI_API_KEY: str
 
     # ── Redis ──

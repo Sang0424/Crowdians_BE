@@ -11,6 +11,7 @@ class UserStatsResponse(BaseModel):
     branches_created: int
     likes_received: int
     conversations_joined: int
+    isOnboardingDone: bool = False
 
 
 class UserResponse(BaseModel):
@@ -22,6 +23,10 @@ class UserResponse(BaseModel):
     stats: UserStatsResponse
     createdAt: datetime
     lastLoginAt: datetime
+    birthdate: Optional[datetime] = None
+    isAdult: bool = False
+    adultVerifiedAt: Optional[datetime] = None
+    nsfwFilter: bool = True
 
 
 class LoginRequest(BaseModel):
@@ -30,6 +35,7 @@ class LoginRequest(BaseModel):
     email: Optional[str] = Field(None)
     name: Optional[str] = Field(None)
     provider: str = Field(..., pattern=r"^(google|discord|twitter)$")
+    birthdate: Optional[datetime] = Field(None)
 
 
 class LoginResponse(BaseModel):
@@ -54,3 +60,14 @@ class RefreshRequest(BaseModel):
 
 class RefreshResponse(BaseModel):
     accessToken: str
+
+
+class VerifyAdultRequest(BaseModel):
+    provider: str = Field(..., pattern=r"^(KCB|DANAL|TOSS|STRIPE|CREDIT_CARD)$")
+    auth_token: str
+
+
+class OnboardRequest(BaseModel):
+    nickname: Optional[str] = Field(None, min_length=2, max_length=12)
+    birthdate: datetime
+    nsfw_filter: Optional[bool] = Field(None)

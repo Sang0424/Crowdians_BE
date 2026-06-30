@@ -1,21 +1,16 @@
 # app/services/auth_service.py
 
 from datetime import datetime, timezone
+from typing import Optional
 
-import firebase_admin
-from firebase_admin import auth as firebase_auth, credentials
 from jose import JWTError, jwt
 
 from app.core.config import settings
 from app.core.redis import get_redis
 from app.core.security import create_access_token, create_refresh_token
 from app.models.user import User, UserStats
+from app.services.signup_bootstrap import ensure_default_agent, generate_unique_user_nickname
 
-
-# ── Firebase Admin SDK 초기화 ──
-if not firebase_admin._apps:
-    cred = credentials.Certificate(settings.GOOGLE_APPLICATION_CREDENTIALS)
-    firebase_admin.initialize_app(cred)
 
 _RT_PREFIX = "refresh_token:"
 
@@ -27,35 +22,33 @@ def verify_internal_api_key(api_key: str | None) -> None:
         raise ValueError("유효하지 않은 Internal API Key입니다.")
 
 
-async def verify_firebase_token(id_token: str) -> dict:
-    try:
-        return firebase_auth.verify_id_token(id_token)
-    except Exception as e:
-        raise ValueError(f"Firebase 토큰 검증 실패: {str(e)}")
-
 
 async def get_or_create_user(
     uid: str,
     email: str | None,
     nickname: str | None,
     provider: str,
+    birthdate: Optional[datetime] = None,
 ) -> tuple[User, bool]:
     user = await User.find_one(User.uid == uid)
 
     if user is not None:
         user.last_login_at = datetime.now(timezone.utc)
         await user.save()
+        await ensure_default_agent(uid)
         return user, False
 
     new_user = User(
         uid=uid,
         email=email,
-        nickname=nickname or "크라우디언",
+        nickname=nickname or await generate_unique_user_nickname(),
         provider=provider,
         stats=UserStats(),
         role="user",
+        birthdate=birthdate,
     )
     await new_user.insert()
+    await ensure_default_agent(uid)
     return new_user, True
 
 

@@ -1,9 +1,16 @@
 import os
 
 os.environ["ENVIRONMENT"] = "test"
+os.environ["APP_ENV"] = "test"
 os.environ["JWT_SECRET"] = "test_super_secret_key"
+os.environ["JWT_ALGORITHM"] = "HS256"
+os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "30"
+os.environ["REFRESH_TOKEN_EXPIRE_DAYS"] = "30"
 os.environ["GEMINI_API_KEY"] = "test_gemini_key"
 os.environ["MONGODB_URL"] = "mongodb://localhost:27017"
+os.environ["DB_NAME"] = "test_db"
+os.environ["REDIS_URL"] = "redis://localhost:6379/0"
+os.environ["INTERNAL_API_KEY"] = "test_internal_api_key"
 
 import pytest
 import pytest_asyncio
@@ -31,16 +38,18 @@ async def setup_db():
     
     from app.models.user import User
     from app.models.chat import ChatConversation
-    from app.models.conversation import Conversation
+    from app.models.channel import Channel
     from app.models.interaction import UserInteraction
+    from app.models.agent_key import AgentKey
 
     await init_beanie(
         database=database,
         document_models=[
             User,
             ChatConversation,
-            Conversation,
+            Channel,
             UserInteraction,
+            AgentKey,
         ],
     )
     yield database
