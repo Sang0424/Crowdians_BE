@@ -15,7 +15,16 @@ from google.genai import types as genai_types
 
 from app.core.config import settings
 from app.models.agent_key import AgentKey
-from app.models.channel import AgentProfile, Branch, Message
+from app.models.channel import AgentProfile, AgentRelationship, Message
+from app.models.memory import MemoryItem
+from app.services.memory_service import retrieve_agent_turn_memories
+from app.services.prompt_guard_service import (
+    AgentPromptParts,
+    PromptSurface,
+    compile_agent_system_prompt,
+    require_safe_prompt_text,
+    safe_model_output,
+)
 
 
 # ── Gemini 클라이언트 ──
@@ -37,9 +46,12 @@ async def issue_agent_key(
     persona: str,
     owner_uid: str,
     model: str = "gemini-2.0-flash",
+    runtime_mode: str = "platform",
     avatar_url: str = "",
 ) -> AgentKey:
     """새 AI Agent를 등록하고 API Key를 발급합니다."""
+    require_safe_prompt_text(PromptSurface.AGENT_NAME, agent_name)
+    require_safe_prompt_text(PromptSurface.AGENT_PERSONA, persona)
     owner_agent_count = await AgentKey.find(AgentKey.owner_uid == owner_uid).count()
     if owner_agent_count >= 3:
         raise ValueError("에이전트 슬롯은 최대 3개까지 생성할 수 있습니다.")
@@ -50,6 +62,7 @@ async def issue_agent_key(
         agent_name=agent_name,
         persona=persona,
         model=model,
+        runtime_mode=runtime_mode,
         avatar_url=avatar_url,
         color=color,
         owner_uid=owner_uid,
@@ -93,8 +106,10 @@ async def update_agent_key(
         raise ValueError("에이전트를 찾을 수 없습니다.")
 
     if agent_name is not None:
+        require_safe_prompt_text(PromptSurface.AGENT_NAME, agent_name)
         agent.agent_name = agent_name
     if persona is not None:
+        require_safe_prompt_text(PromptSurface.AGENT_PERSONA, persona)
         agent.persona = persona
     if model is not None:
         agent.model = model
@@ -112,6 +127,7 @@ def build_agent_profile(agent_key: AgentKey) -> AgentProfile:
         name=agent_key.agent_name,
         persona=agent_key.persona,
         model=agent_key.model,
+        runtime_mode=agent_key.runtime_mode,
         avatar_url=agent_key.avatar_url,
         gender=agent_key.gender,
         mbti_ei=agent_key.mbti_ei,
@@ -130,7 +146,9 @@ async def generate_agent_reply(
     all_agents: list[AgentProfile],
     intervention: Optional[str] = None,
     intervention_type: Optional[str] = None,
-    relationships: Optional[list] = None,
+    relationships: Optional[list[AgentRelationship]] = None,
+    memories: Optional[list[MemoryItem]] = None,
+    channel_id: Optional[str] = None,
 ) -> Message:
     """
     에이전트가 다음 메시지를 생성합니다.
@@ -138,41 +156,23 @@ async def generate_agent_reply(
     - intervention_type="replace": 특정 메시지를 교체
     - intervention_type="redirect": 이 시점부터 방향 전환
     """
-    # 참여 에이전트 목록 컨텍스트 구성
-    agents_desc = "\n".join(
-        f"- {a.name}: {a.persona}" for a in all_agents
+    resolved_memories = memories
+    if resolved_memories is None:
+        resolved_memories = await retrieve_agent_turn_memories(
+            agent_id=agent.agent_id,
+            channel_id=channel_id,
+        )
+
+    system_prompt = compile_agent_system_prompt(
+        AgentPromptParts(
+            agent=agent,
+            all_agents=all_agents,
+            relationships=relationships or [],
+            memories=resolved_memories,
+            intervention=intervention,
+            intervention_type=intervention_type,
+        )
     )
-
-    # 에이전트 간의 관계 정보 컨텍스트 구성
-    rel_desc_list = []
-    if relationships:
-        for rel in relationships:
-            # 본인(agent)과 연관된 관계 정보만 주입
-            if rel.agent_id_a == agent.agent_id or rel.agent_id_b == agent.agent_id:
-                other_id = rel.agent_id_b if rel.agent_id_a == agent.agent_id else rel.agent_id_a
-                other_agent = next((a for a in all_agents if a.agent_id == other_id), None)
-                if other_agent:
-                    rel_desc_list.append(
-                        f"- {other_agent.name}와의 관계: {rel.relationship_label} (친밀도: {rel.affinity}%). {rel.description}"
-                    )
-    rel_context = "\n".join(rel_desc_list) if rel_desc_list else "다른 에이전트들과의 특별한 관계 설정이나 감정 상태는 없습니다."
-
-    system_prompt = (
-        f"You are {agent.name}. {agent.persona}\n\n"
-        f"다음 에이전트들과 함께 대화 중입니다:\n{agents_desc}\n\n"
-        f"주변 인물(에이전트)들과의 현재 관계:\n{rel_context}\n\n"
-        "자연스러운 한국어 대화로 응답하세요. "
-        "다른 에이전트의 이름을 부를 때 '@이름' 형식을 사용하세요. "
-        "각 에이전트와의 친밀도 및 관계 상태(우호적, 대립적 등)에 적절히 부합하는 톤앤매너로 대답하세요. "
-        "짧고 명확하게 응답하세요 (3~5문장 이내)."
-    )
-
-    # 개입 지시 반영
-    if intervention:
-        if intervention_type == "replace":
-            system_prompt += f"\n\n[HUMAN INSTRUCTION] 방금 발언을 다음과 같이 수정해주세요: {intervention}"
-        elif intervention_type == "redirect":
-            system_prompt += f"\n\n[HUMAN INSTRUCTION] 지금부터 대화 방향을 다음과 같이 바꿔주세요: {intervention}"
 
     # 대화 히스토리 → Gemini content 형식으로 변환
     contents: list[genai_types.Content] = []
@@ -198,7 +198,7 @@ async def generate_agent_reply(
         ),
     )
 
-    content = response.text or ""
+    content = safe_model_output(response.text or "")
     # "[에이전트명]: " prefix 제거 (모델이 붙일 수 있음)
     if content.startswith(f"[{agent.name}]:"):
         content = content[len(f"[{agent.name}]:"):].strip()

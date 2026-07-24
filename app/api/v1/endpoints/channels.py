@@ -12,6 +12,7 @@ from app.core.security import CurrentUser, CurrentUserOptional
 from app.models.channel import AgentProfile, Branch, Channel
 from app.models.interaction import UserInteraction
 from app.services import channel_service
+from app.services.prompt_guard_service import PromptInjectionBlockedError
 
 router = APIRouter(prefix="/channels", tags=["Channels"])
 
@@ -25,6 +26,7 @@ class AgentProfileIn(BaseModel):
     name: str
     persona: str
     model: str = "gemini-2.0-flash"
+    runtime_mode: str = "platform"
     avatar_url: str = ""
 
 
@@ -65,6 +67,8 @@ class BranchOut(BaseModel):
     data_opt_in: bool
     rejected_content: Optional[str] = None
     child_branch_ids: list[str]
+    memory_candidate_ids: list[str] = []
+    safety_events: list[str] = []
     depth: int
     likes: int
     scraps: int
@@ -183,17 +187,23 @@ async def create_channel(
             name=a.name,
             persona=a.persona,
             model=a.model,
+            runtime_mode=a.runtime_mode,
             avatar_url=a.avatar_url,
         )
         for a in body.agents
     ]
-    conv = await channel_service.create_channel(
-        title=body.title,
-        topic=body.topic,
-        tags=body.tags,
-        agents=agents,
-        creator_uid=current_user.uid,
-    )
+    try:
+        conv = await channel_service.create_channel(
+            title=body.title,
+            topic=body.topic,
+            tags=body.tags,
+            agents=agents,
+            creator_uid=current_user.uid,
+        )
+    except PromptInjectionBlockedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return _channel_to_detail(conv)
 
 
@@ -256,16 +266,21 @@ async def create_branch(
     if body.intervention_type not in ("replace", "redirect"):
         raise HTTPException(status_code=400, detail="intervention_type은 'replace' 또는 'redirect'이어야 합니다.")
 
-    _, branch = await channel_service.create_branch(
-        channel_id=channel_id,
-        parent_branch_id=body.parent_branch_id,
-        fork_message_id=body.fork_message_id,
-        intervention_type=body.intervention_type,
-        intervention_content=body.intervention_content,
-        intervener_uid=current_user.uid,
-        channel_name=body.channel_name,
-        data_opt_in=current_user.data_opt_in,
-    )
+    try:
+        _, branch = await channel_service.create_branch(
+            channel_id=channel_id,
+            parent_branch_id=body.parent_branch_id,
+            fork_message_id=body.fork_message_id,
+            intervention_type=body.intervention_type,
+            intervention_content=body.intervention_content,
+            intervener_uid=current_user.uid,
+            channel_name=body.channel_name,
+            data_opt_in=current_user.data_opt_in,
+        )
+    except PromptInjectionBlockedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     # 비동기로 에이전트 간의 관계 업데이트
     background_tasks.add_task(
@@ -375,6 +390,7 @@ def _channel_to_detail(channel: Channel) -> ChannelDetailOut:
                 name=a.name,
                 persona=a.persona,
                 model=a.model,
+                runtime_mode=getattr(a, "runtime_mode", "platform"),
                 avatar_url=a.avatar_url,
             )
             for a in channel.agents
@@ -416,6 +432,8 @@ def _branch_to_out(branch: Branch) -> BranchOut:
         data_opt_in=getattr(branch, "data_opt_in", False),
         rejected_content=getattr(branch, "rejected_content", None),
         child_branch_ids=branch.child_branch_ids,
+        memory_candidate_ids=branch.memory_candidate_ids,
+        safety_events=branch.safety_events,
         depth=branch.depth,
         likes=branch.likes,
         scraps=branch.scraps,

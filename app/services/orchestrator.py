@@ -1,101 +1,131 @@
-# app/services/orchestrator.py
-from typing import TypedDict, Annotated, Sequence, Optional
 import operator
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
+from typing import Annotated, Optional, Sequence, TypedDict
 
-# ─────────────────────────────────────────────
-# State Definition
-# ─────────────────────────────────────────────
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
+
+from app.models.channel import Channel
+from app.services.channel_service import ModeratorState, advance_moderator_state
+
+
 class AgentState(TypedDict):
     conversation_id: str
     current_branch_id: str
+    conversation: Channel
     messages: Annotated[Sequence[BaseMessage], operator.add]
+    moderator_state: ModeratorState
     next_speaker: Optional[str]
-    # 유저의 개입 여부/내용 (Human-in-the-loop)
     intervention: Optional[str]
 
-# ─────────────────────────────────────────────
-# Node Functions
-# ─────────────────────────────────────────────
-def router_node(state: AgentState):
-    """
-    중앙 라우터 역할.
-    다음 발화할 에이전트를 결정하거나, 루프를 감지하고, 대화를 제어합니다.
-    (실제로는 LLM 호출을 통해 동적으로 결정하거나 룰 기반으로 순환시킬 수 있습니다.)
-    """
-    # 임시 로직: 에이전트 간 핑퐁을 하거나, 종료.
-    # 현재 참여한 에이전트 목록은 DB의 conversation에서 가져와야 하지만,
-    # 데모/뼈대 목적이므로 상태를 업데이트하여 다음 에이전트로 라우팅하는 역할만 선언.
-    
-    # 만약 유저 개입이 있다면, 우선 처리.
+
+def router_node(state: AgentState) -> dict[str, Optional[str]]:
+    moderator_state = state["moderator_state"]
+
     if state.get("intervention"):
         return {"next_speaker": "human_intervention_processor"}
-    
-    # TODO: LLM Evaluator를 통한 분기 제어 로직 (Bounty 등)
-    next_speaker = "agent_1" # 예시 라우팅 로직
-    return {"next_speaker": next_speaker}
 
-def generate_agent_response(state: AgentState):
-    """
-    선택된 에이전트(next_speaker)가 발화하는 노드.
-    해당 에이전트의 페르소나를 반영하여 LLM을 호출합니다.
-    """
+    if moderator_state.status != "active":
+        return {"next_speaker": None}
+
+    return {"next_speaker": _select_next_speaker(state)}
+
+
+def _select_next_speaker(state: AgentState) -> Optional[str]:
+    moderator_state = state["moderator_state"]
+    allowed_speaker_ids = moderator_state.allowed_speaker_ids
+    if not allowed_speaker_ids:
+        return moderator_state.next_speaker_id
+
+    branch = state["conversation"].branches.get(state["current_branch_id"])
+    if not branch or not branch.messages:
+        return allowed_speaker_ids[0]
+
+    agent_name_by_id = {
+        agent.agent_id: agent.name.lower()
+        for agent in state["conversation"].agents
+    }
+    last_message = branch.messages[-1]
+    last_content = last_message.content.lower()
+    preferred_speaker_id = moderator_state.next_speaker_id
+
+    scored_candidates = []
+    for speaker_id in allowed_speaker_ids:
+        score = 0
+        if speaker_id == preferred_speaker_id:
+            score += 4
+        if speaker_id != moderator_state.last_speaker_id:
+            score += 2
+        speaker_name = agent_name_by_id.get(speaker_id, "")
+        if speaker_name and speaker_name in last_content:
+            score += 3
+        if last_content.endswith(("?", "?!")) and speaker_id != moderator_state.last_speaker_id:
+            score += 1
+        scored_candidates.append((score, speaker_id))
+
+    scored_candidates.sort(key=lambda item: item[0], reverse=True)
+    return scored_candidates[0][1]
+
+
+def generate_agent_response(
+    state: AgentState,
+) -> dict[str, list[BaseMessage] | ModeratorState | Optional[str]]:
     speaker = state.get("next_speaker")
-    # 실제로는 LLM 호출 후 반환된 응답을 추가
-    response_msg = AIMessage(content=f"{speaker} response placeholder", name=speaker)
-    return {"messages": [response_msg]}
+    if not speaker:
+        return {}
 
-def human_intervention_processor(state: AgentState):
-    """
-    유저가 대화에 개입(Fork/Redirect)했을 때,
-    현재 컨텍스트를 파악하고 새로운 브랜치를 생성하기 전의 전처리 역할을 합니다.
-    """
+    updated_moderator_state = advance_moderator_state(
+        channel=state["conversation"],
+        branch_id=state["current_branch_id"],
+        speaker_id=speaker,
+    )
+    response_message = AIMessage(content=f"{speaker} response placeholder", name=speaker)
+    return {
+        "messages": [response_message],
+        "moderator_state": updated_moderator_state,
+    }
+
+
+def human_intervention_processor(
+    state: AgentState,
+) -> dict[str, list[BaseMessage] | ModeratorState | Optional[str]]:
     intervention = state.get("intervention")
-    # 개입 처리 로직 (DB 브랜치 분기 등은 별도 Service에서 처리)
-    # 여기서는 상태 업데이트
-    return {"intervention": None, "messages": [HumanMessage(content=f"[Intervention] {intervention}")]}
+    if not intervention:
+        return {"intervention": None}
 
-def route_after_router(state: AgentState):
-    """라우터 결정에 따라 다음 실행할 노드를 반환"""
+    return {
+        "intervention": None,
+        "messages": [HumanMessage(content=f"[Intervention] {intervention}")],
+    }
+
+
+def route_after_router(state: AgentState) -> str:
     next_speaker = state.get("next_speaker")
     if next_speaker == "human_intervention_processor":
         return "human_intervention"
-    elif next_speaker:
+    if next_speaker:
         return "generate_response"
     return END
 
-# ─────────────────────────────────────────────
-# Graph Construction
-# ─────────────────────────────────────────────
+
 def create_orchestrator_graph():
     workflow = StateGraph(AgentState)
-    
     workflow.add_node("router", router_node)
     workflow.add_node("generate_response", generate_agent_response)
     workflow.add_node("human_intervention", human_intervention_processor)
-    
-    # 엣지 연결 (엔트리 포인트는 라우터)
     workflow.set_entry_point("router")
-    
-    # 조건부 라우팅
-    workflow.add_conditional_edges("router", route_after_router, {
-        "human_intervention": "human_intervention",
-        "generate_response": "generate_response",
-        END: END
-    })
-    
-    # 응답 생성 후 다시 라우터로 돌아감 (무한 루프 방지 로직 필요)
+    workflow.add_conditional_edges(
+        "router",
+        route_after_router,
+        {
+            "human_intervention": "human_intervention",
+            "generate_response": "generate_response",
+            END: END,
+        },
+    )
     workflow.add_edge("generate_response", "router")
     workflow.add_edge("human_intervention", "router")
-    
-    # 메모리 세이버 (Interrupt 지원)
-    memory = MemorySaver()
-    
-    # 컴파일 시, 특정 노드 이전에 interrupt 할지 설정할 수 있음.
-    # 예: 라우터가 결정한 뒤 사용자 확인을 받기 위해 interrupt_before=["generate_response"]
-    app = workflow.compile(checkpointer=memory)
-    return app
+    return workflow.compile(checkpointer=MemorySaver())
+
 
 orchestrator_app = create_orchestrator_graph()

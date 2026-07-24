@@ -6,8 +6,9 @@
 import math
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Final, Optional
 
+from pydantic import BaseModel, Field
 from app.models.channel import (
     Branch,
     Channel,
@@ -23,10 +24,246 @@ from app.models.interaction import (
     INTERACTION_DOWNVOTE,
 )
 from app.models.user import User
+from app.services.memory_service import extract_branch_memory_candidates
+from app.services.prompt_guard_service import PromptSurface, require_safe_prompt_text
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+SESSION_TURN_LIMIT: Final[int] = 15
+ALLOWED_INTERVENTION_TYPES: Final[tuple[str, str]] = ("replace", "redirect")
+
+
+class ModeratorRules(BaseModel):
+    session_turn_limit: int = SESSION_TURN_LIMIT
+    allowed_intervention_types: list[str] = Field(
+        default_factory=lambda: list(ALLOWED_INTERVENTION_TYPES)
+    )
+    enforce_participant_turns: bool = True
+    prevent_consecutive_turns: bool = True
+    max_consecutive_turns: int = 2
+    require_branch_safe_intervention: bool = True
+
+
+class ModeratorState(BaseModel):
+    branch_id: str
+    channel_name: str
+    status: str
+    turn_count: int
+    session_turn_limit: int
+    turns_remaining: int
+    next_speaker_id: Optional[str]
+    allowed_speaker_ids: list[str] = Field(default_factory=list)
+    last_speaker_id: Optional[str]
+    consecutive_turn_count: int = 0
+    max_consecutive_turns: int = 2
+    safe_intervention_message_ids: list[str] = Field(default_factory=list)
+    can_intervene_now: bool = False
+
+
+def get_moderator_rules() -> ModeratorRules:
+    return ModeratorRules()
+
+
+def _agent_ids(agents: list[AgentProfile]) -> list[str]:
+    return [agent.agent_id for agent in agents]
+
+
+def _resolve_next_speaker_id(
+    agents: list[AgentProfile],
+    last_speaker_id: Optional[str],
+) -> Optional[str]:
+    if not agents:
+        return None
+
+    ordered_agent_ids = _agent_ids(agents)
+    if last_speaker_id is None or last_speaker_id not in ordered_agent_ids:
+        return ordered_agent_ids[0]
+
+    if len(ordered_agent_ids) == 1:
+        return ordered_agent_ids[0]
+
+    current_index = ordered_agent_ids.index(last_speaker_id)
+    next_index = (current_index + 1) % len(ordered_agent_ids)
+    return ordered_agent_ids[next_index]
+
+
+def _get_consecutive_turn_count(branch: Branch) -> int:
+    if not branch.messages:
+        return 0
+
+    last_speaker_id = branch.messages[-1].agent_id
+    count = 0
+    for message in reversed(branch.messages):
+        if message.agent_id != last_speaker_id:
+            break
+        count += 1
+    return count
+
+
+def _should_prefer_followup_turn(
+    branch: Branch,
+    consecutive_turn_count: int,
+    rules: ModeratorRules,
+) -> bool:
+    if not branch.messages or consecutive_turn_count >= rules.max_consecutive_turns:
+        return False
+
+    last_content = branch.messages[-1].content.strip()
+    if not last_content:
+        return False
+
+    if len(last_content) <= 40:
+        return True
+
+    return last_content.endswith(("?", "?!", "...", "…", ":"))
+
+
+def get_branch_safe_intervention_message_ids(branch: Branch) -> list[str]:
+    return [message.message_id for message in branch.messages]
+
+
+def get_branch_moderator_state(channel: Channel, branch_id: str) -> ModeratorState:
+    branch = channel.branches.get(branch_id)
+    if not branch:
+        raise ValueError("분기를 찾을 수 없습니다.")
+
+    rules = get_moderator_rules()
+    safe_intervention_message_ids = get_branch_safe_intervention_message_ids(branch)
+    turn_count = len(branch.messages)
+    turns_remaining = max(0, rules.session_turn_limit - turn_count)
+    last_speaker_id = branch.messages[-1].agent_id if branch.messages else None
+    consecutive_turn_count = _get_consecutive_turn_count(branch)
+    limit_reached = turn_count >= rules.session_turn_limit
+
+    if branch.status == "completed" or limit_reached:
+        status = "completed"
+    else:
+        status = "active"
+
+    next_speaker_id = None
+    allowed_speaker_ids: list[str] = []
+    if status == "active":
+        sequential_next_speaker_id = _resolve_next_speaker_id(
+            channel.agents,
+            last_speaker_id,
+        )
+        prefers_followup_turn = (
+            len(channel.agents) > 1
+            and last_speaker_id is not None
+            and _should_prefer_followup_turn(branch, consecutive_turn_count, rules)
+        )
+        next_speaker_id = last_speaker_id if prefers_followup_turn else sequential_next_speaker_id
+        ordered_allowed = [next_speaker_id, sequential_next_speaker_id]
+        allowed_speaker_ids = [
+            speaker_id
+            for speaker_id in ordered_allowed
+            if speaker_id is not None and speaker_id not in allowed_speaker_ids
+        ]
+
+    return ModeratorState(
+        branch_id=branch_id,
+        channel_name=branch.channel_name,
+        status=status,
+        turn_count=turn_count,
+        session_turn_limit=rules.session_turn_limit,
+        turns_remaining=turns_remaining,
+        next_speaker_id=next_speaker_id,
+        allowed_speaker_ids=allowed_speaker_ids,
+        last_speaker_id=last_speaker_id,
+        consecutive_turn_count=consecutive_turn_count,
+        max_consecutive_turns=rules.max_consecutive_turns,
+        safe_intervention_message_ids=safe_intervention_message_ids,
+        can_intervene_now=bool(safe_intervention_message_ids),
+    )
+
+
+def advance_moderator_state(
+    channel: Channel,
+    branch_id: str,
+    speaker_id: str,
+) -> ModeratorState:
+    branch = channel.branches.get(branch_id)
+    if not branch:
+        raise ValueError("분기를 찾을 수 없습니다.")
+
+    moderator_state = get_branch_moderator_state(channel, branch_id)
+    next_turn_count = moderator_state.turn_count + 1
+    turns_remaining = max(0, moderator_state.session_turn_limit - next_turn_count)
+    status = "completed" if turns_remaining == 0 else "active"
+    consecutive_turn_count = (
+        moderator_state.consecutive_turn_count + 1
+        if moderator_state.last_speaker_id == speaker_id
+        else 1
+    )
+    next_speaker_id = None if status != "active" else _resolve_next_speaker_id(
+        channel.agents,
+        speaker_id,
+    )
+    allowed_speaker_ids = [] if next_speaker_id is None else [next_speaker_id]
+
+    return moderator_state.model_copy(
+        update={
+            "status": status,
+            "turn_count": next_turn_count,
+            "turns_remaining": turns_remaining,
+            "last_speaker_id": speaker_id,
+            "next_speaker_id": next_speaker_id,
+            "allowed_speaker_ids": allowed_speaker_ids,
+            "consecutive_turn_count": consecutive_turn_count,
+        }
+    )
+
+
+def _ensure_message_allowed_by_moderator(
+    channel: Channel,
+    branch: Branch,
+    message: Message,
+) -> None:
+    rules = get_moderator_rules()
+    moderator_state = get_branch_moderator_state(channel, branch.branch_id)
+
+    if message.agent_id not in _agent_ids(channel.agents):
+        raise ValueError("채널에 참여하지 않은 에이전트는 발화할 수 없습니다.")
+
+    if moderator_state.status != "active":
+        raise ValueError("이 분기는 더 이상 발화를 받을 수 없습니다.")
+
+    if (
+        rules.prevent_consecutive_turns
+        and len(channel.agents) > 1
+        and moderator_state.last_speaker_id == message.agent_id
+        and moderator_state.consecutive_turn_count >= rules.max_consecutive_turns
+    ):
+        raise ValueError("Moderator guardrail blocked too many consecutive turns.")
+
+    if (
+        rules.enforce_participant_turns
+        and moderator_state.allowed_speaker_ids
+        and message.agent_id not in moderator_state.allowed_speaker_ids
+    ):
+        raise ValueError("Moderator allowed speakers violation.")
+
+
+def _validate_branch_intervention(
+    channel: Channel,
+    parent_branch: Branch,
+    fork_message_id: str,
+    intervention_type: str,
+) -> None:
+    rules = get_moderator_rules()
+    moderator_state = get_branch_moderator_state(channel, parent_branch.branch_id)
+
+    if intervention_type not in rules.allowed_intervention_types:
+        raise ValueError("지원하지 않는 개입 유형입니다.")
+
+    if (
+        rules.require_branch_safe_intervention
+        and fork_message_id not in moderator_state.safe_intervention_message_ids
+    ):
+        raise ValueError("Moderator requires interventions to fork from a safe message boundary.")
 
 
 # ─────────────────────────────────────────────
@@ -41,6 +278,11 @@ async def create_channel(
     creator_uid: Optional[str] = None,
 ) -> Channel:
     """새 채널 생성 (root branch 포함)."""
+    require_safe_prompt_text(PromptSurface.CHANNEL_TOPIC, topic)
+    for agent in agents:
+        require_safe_prompt_text(PromptSurface.AGENT_NAME, agent.name)
+        require_safe_prompt_text(PromptSurface.AGENT_PERSONA, agent.persona)
+
     root_branch_id = generate_branch_id(None, None, None)
     root_branch = Branch(
         branch_id=root_branch_id,
@@ -113,6 +355,14 @@ async def create_branch(
     if not parent_branch:
         raise ValueError("부모 분기를 찾을 수 없습니다.")
 
+    _validate_branch_intervention(
+        channel=channel,
+        parent_branch=parent_branch,
+        fork_message_id=fork_message_id,
+        intervention_type=intervention_type,
+    )
+    require_safe_prompt_text(PromptSurface.USER_INTERVENTION, intervention_content)
+
     messages_before_fork: list[Message] = []
     rejected_content: Optional[str] = None
 
@@ -177,7 +427,17 @@ async def add_message_to_branch(
     if not branch:
         raise ValueError("분기를 찾을 수 없습니다.")
 
+    _ensure_message_allowed_by_moderator(
+        channel=channel,
+        branch=branch,
+        message=message,
+    )
+
     branch.messages.append(message)
+    if len(branch.messages) >= SESSION_TURN_LIMIT:
+        branch.status = "completed"
+        await extract_branch_memory_candidates(channel, branch)
+
     channel.updated_at = _utcnow()
     await channel.save()
 

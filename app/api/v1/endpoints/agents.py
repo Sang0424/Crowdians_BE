@@ -15,6 +15,11 @@ from app.services.agent_service import (
     verify_agent_key,
     get_agent_keys_by_owner,
 )
+from app.services.prompt_guard_service import (
+    PromptInjectionBlockedError,
+    PromptSurface,
+    require_safe_prompt_text,
+)
 from app.services.signup_bootstrap import AgentProfileSeed, create_agent_key
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
@@ -28,6 +33,7 @@ class CreateAgentRequest(BaseModel):
     agent_name: Optional[str] = None
     persona: Optional[str] = None
     model: str = "gemini-2.0-flash"
+    runtime_mode: str = "platform"
     avatar_url: str = ""
     gender: Optional[str] = None
     mbti_ei: Optional[str] = None
@@ -41,6 +47,7 @@ class UpdateAgentRequest(BaseModel):
     agent_name: Optional[str] = None
     persona: Optional[str] = None
     model: Optional[str] = None
+    runtime_mode: Optional[str] = None
     avatar_url: Optional[str] = None
     gender: Optional[str] = None
     mbti_ei: Optional[str] = None
@@ -55,6 +62,7 @@ class AgentKeyResponse(BaseModel):
     agent_name: str
     persona: str
     model: str
+    runtime_mode: str
     avatar_url: str
     color: str
     gender: str
@@ -74,6 +82,7 @@ class AgentKeySummary(BaseModel):
     agent_name: str
     persona: str
     model: str
+    runtime_mode: str
     avatar_url: str
     color: str
     gender: str
@@ -110,6 +119,7 @@ async def create_agent(
                 agent_name=body.agent_name,
                 persona=body.persona,
                 model=body.model,
+                runtime_mode=body.runtime_mode,
                 avatar_url=body.avatar_url,
                 gender=body.gender,
                 mbti_ei=body.mbti_ei,
@@ -119,6 +129,8 @@ async def create_agent(
                 speaking_tone=body.speaking_tone,
             ),
         )
+    except PromptInjectionBlockedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return AgentKeyResponse(
@@ -126,6 +138,7 @@ async def create_agent(
         agent_name=agent.agent_name,
         persona=agent.persona,
         model=agent.model,
+        runtime_mode=agent.runtime_mode,
         avatar_url=agent.avatar_url,
         color=agent.color,
         gender=agent.gender,
@@ -150,6 +163,7 @@ async def list_my_agents(current_user: CurrentUser):
             agent_name=a.agent_name,
             persona=a.persona,
             model=a.model,
+            runtime_mode=a.runtime_mode,
             avatar_url=a.avatar_url,
             color=a.color,
             gender=a.gender,
@@ -183,9 +197,15 @@ async def update_agent(
     if body.agent_name is not None:
         agent.agent_name = body.agent_name
     if body.persona is not None:
+        try:
+            require_safe_prompt_text(PromptSurface.AGENT_PERSONA, body.persona)
+        except PromptInjectionBlockedError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         agent.persona = body.persona
     if body.model is not None:
         agent.model = body.model
+    if body.runtime_mode is not None:
+        agent.runtime_mode = body.runtime_mode
     if body.avatar_url is not None:
         agent.avatar_url = body.avatar_url
     if body.gender is not None:
@@ -207,6 +227,7 @@ async def update_agent(
         agent_name=agent.agent_name,
         persona=agent.persona,
         model=agent.model,
+        runtime_mode=agent.runtime_mode,
         avatar_url=agent.avatar_url,
         color=agent.color,
         gender=agent.gender,

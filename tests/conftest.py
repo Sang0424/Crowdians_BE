@@ -41,6 +41,7 @@ async def setup_db():
     from app.models.channel import Channel
     from app.models.interaction import UserInteraction
     from app.models.agent_key import AgentKey
+    from app.models.memory import MemoryItem
 
     await init_beanie(
         database=database,
@@ -50,6 +51,7 @@ async def setup_db():
             Channel,
             UserInteraction,
             AgentKey,
+            MemoryItem,
         ],
     )
     yield database

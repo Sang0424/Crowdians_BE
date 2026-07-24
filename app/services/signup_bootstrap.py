@@ -6,6 +6,7 @@ from typing import Final
 
 from app.models.agent_key import AgentKey
 from app.models.user import User
+from app.services.prompt_guard_service import PromptSurface, require_safe_prompt_text
 
 _USER_NICKNAME_PREFIXES: Final[tuple[str, ...]] = (
     "반짝",
@@ -92,7 +93,6 @@ _DEFAULT_AGENT_COLORS: Final[tuple[str, ...]] = (
     "#ef4444",
     "#8b5cf6",
 )
-_MAX_AGENT_SLOTS: Final[int] = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +100,7 @@ class AgentProfileSeed:
     agent_name: str | None = None
     persona: str | None = None
     model: str | None = None
+    runtime_mode: str = "platform"
     avatar_url: str = ""
     gender: str | None = None
     mbti_ei: str | None = None
@@ -144,10 +145,12 @@ def _choose_mbti(seed: AgentProfileSeed) -> tuple[str, str, str, str]:
 
 async def create_agent_key(owner_uid: str, seed: AgentProfileSeed | None = None) -> AgentKey:
     resolved_seed = seed or AgentProfileSeed()
-    owner_agent_count = await AgentKey.find(AgentKey.owner_uid == owner_uid).count()
-    if owner_agent_count >= _MAX_AGENT_SLOTS:
-        raise ValueError("에이전트 슬롯은 최대 3개까지 생성할 수 있습니다.")
+    if resolved_seed.agent_name is not None:
+        require_safe_prompt_text(PromptSurface.AGENT_NAME, resolved_seed.agent_name)
+    if resolved_seed.persona is not None:
+        require_safe_prompt_text(PromptSurface.AGENT_PERSONA, resolved_seed.persona)
 
+    owner_agent_count = await AgentKey.find(AgentKey.owner_uid == owner_uid).count()
     color = _DEFAULT_AGENT_COLORS[owner_agent_count % len(_DEFAULT_AGENT_COLORS)]
     mbti_ei, mbti_sn, mbti_tf, mbti_jp = _choose_mbti(resolved_seed)
 
@@ -155,6 +158,7 @@ async def create_agent_key(owner_uid: str, seed: AgentProfileSeed | None = None)
         agent_name=resolved_seed.agent_name or random.choice(_DEFAULT_AGENT_NAMES),
         persona=resolved_seed.persona or random.choice(_DEFAULT_AGENT_PERSONAS),
         model=resolved_seed.model or random.choice(_DEFAULT_AGENT_MODELS),
+        runtime_mode=resolved_seed.runtime_mode,
         avatar_url=resolved_seed.avatar_url,
         color=color,
         owner_uid=owner_uid,

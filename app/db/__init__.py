@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.channel import Channel
 from app.models.interaction import UserInteraction
 from app.models.agent_key import AgentKey
+from app.models.memory import MemoryItem
 from app.models.report import Report
 
 DOCUMENT_MODELS = [
@@ -15,6 +16,7 @@ DOCUMENT_MODELS = [
     Channel,
     UserInteraction,
     AgentKey,
+    MemoryItem,
     Report,
 ]
 

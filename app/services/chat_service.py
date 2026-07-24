@@ -22,6 +22,7 @@ from app.core.exceptions import (
     GeminiServerError,
     GeminiInvalidRequestError,
 )
+from app.services.prompt_guard_service import safe_model_output
 import logging
 
 logger = logging.getLogger(__name__)
@@ -300,7 +301,7 @@ async def send_chat_message(
                 safety_settings=my_safety_settings,
             )
         )
-        ai_response_text = _check_safety_block(response)
+        ai_response_text = safe_model_output(_check_safety_block(response))
     except Exception as e:
         if isinstance(e, (GeminiRateLimitError, GeminiSafetyBlockError, GeminiAuthError, GeminiServerError, GeminiInvalidRequestError)):
             raise e
@@ -462,7 +463,7 @@ async def send_guest_chat_message(
                 safety_settings=my_safety_settings
             )
         )
-        ai_message_text = _check_safety_block(response)
+        ai_message_text = safe_model_output(_check_safety_block(response))
     except Exception as e:
         _handle_gemini_error(e)
 
@@ -663,10 +664,12 @@ async def stream_chat_message(
         async for chunk in response:
             if chunk.text:
                 ai_response_text += chunk.text
-                yield {"type": "token", "data": {"token": chunk.text}}
         
         if not ai_response_text:
             raise GeminiSafetyBlockError()
+
+        ai_response_text = safe_model_output(ai_response_text)
+        yield {"type": "token", "data": {"token": ai_response_text}}
 
     except Exception as e:
         if isinstance(e, genai_errors.ClientError):

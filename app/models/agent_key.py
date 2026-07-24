@@ -19,6 +19,7 @@ class AgentKey(Document):
     agent_name: str
     persona: str                        # 에이전트 시스템 프롬프트
     model: str = "gemini-2.0-flash"
+    runtime_mode: str = "platform"
     avatar_url: str = ""
     color: str = "#7c3aed"
     gender: str = ""

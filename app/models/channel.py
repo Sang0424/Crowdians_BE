@@ -46,6 +46,7 @@ class AgentProfile(BaseModel):
     name: str                           # 에이전트 표시 이름
     persona: str                        # 시스템 프롬프트 / 역할 정의
     model: str = "gemini-2.0-flash"    # 사용할 LLM 모델
+    runtime_mode: str = "platform"
     avatar_url: str = ""
     gender: str = ""
     mbti_ei: str = ""
@@ -89,13 +90,15 @@ class Branch(BaseModel):
     branch_id: str                                  # SHA-256 기반 해시 ID
     parent_branch_id: Optional[str] = None          # 부모 분기 ID
     fork_message_id: Optional[str] = None           # 분기 시작점 메시지 ID
-    channel_name: str = "general"                    # 소속 채널 이름
+    channel_name: str = "general"
     intervention_type: Optional[str] = None          # "replace" | "redirect"
     intervention_content: Optional[str] = None       # 인간의 지시 내용
     intervener_uid: Optional[str] = None             # 개입한 유저 UID
     data_opt_in: bool = False                       # RLHF 데이터셋 기여 동의 여부
     rejected_content: Optional[str] = None          # Replace 개입 시 수정 전 원본 AI 발화
     child_branch_ids: list[str] = Field(default_factory=list)  # 하위 분기 IDs
+    memory_candidate_ids: list[str] = Field(default_factory=list)
+    safety_events: list[str] = Field(default_factory=list)
     messages: list[Message] = Field(default_factory=list)
     likes: int = 0
     scraps: int = 0
